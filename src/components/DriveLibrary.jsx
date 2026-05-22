@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, Folder, Lock, ListMusic, Zap, Coffee, Plus, Sparkles, FolderOpen } from 'lucide-react';
+import { HardDrive, Folder, Lock, ListMusic, Zap, Coffee, Plus, Sparkles, FolderOpen, Trash2, X } from 'lucide-react';
 
 const DriveLibrary = ({ 
   tracks = [], 
@@ -7,13 +7,14 @@ const DriveLibrary = ({
   selectedFolderId = null,
   onFolderSelect,
   currentTrack = null,
-  folderCounts = {}
+  folderCounts = {},
+  playlists = [],
+  selectedPlaylistId = null,
+  onPlaylistSelect,
+  onCreatePlaylist,
+  onDeletePlaylist
 }) => {
   const [showSecret, setShowSecret] = useState(false);
-  const [playlists, setPlaylists] = useState([
-    { id: 'pl1', name: 'ナイトドライブ (AI)', type: 'ai' },
-    { id: 'pl2', name: '集中コーディング', type: 'manual' }
-  ]);
 
   const handleBrandDoubleClick = () => {
     setShowSecret(!showSecret);
@@ -26,26 +27,15 @@ const DriveLibrary = ({
   const handleCreatePlaylist = () => {
     const name = prompt('新規プレイリストの名前を入力してください:');
     if (name && name.trim()) {
-      const newPl = {
-        id: `pl-${Date.now()}`,
-        name: name.trim(),
-        type: 'manual'
-      };
-      setPlaylists([...playlists, newPl]);
+      onCreatePlaylist(name.trim(), 'manual');
     }
   };
 
   // AIプレイリスト作成ボタンのハンドラ
   const handleCreateAIPlaylist = () => {
-    const promptText = prompt('どのような曲調のプレイリストを作成しますか？\n(例:「深夜 of 高速道路を走るのに合うサイバーなインスト曲」)');
+    const promptText = prompt('どのような曲調のプレイリストを作成しますか？\n(例:「深夜の高速道路を走るのに合うサイバーなインスト曲」)');
     if (promptText && promptText.trim()) {
-      alert(`AI DJ が「${promptText}」のテーマでドライブ内の音楽を解析中...\n\nプレイリスト「${promptText.substring(0, 10)}... (AI)」を生成しました！`);
-      const newPl = {
-        id: `pl-ai-${Date.now()}`,
-        name: `🤖 ${promptText.substring(0, 10)}... (AI)`,
-        type: 'ai'
-      };
-      setPlaylists([...playlists, newPl]);
+      onCreatePlaylist(`🤖 ${promptText.substring(0, 15)}... (AI)`, 'ai', promptText.trim());
     }
   };
 
@@ -176,16 +166,79 @@ const DriveLibrary = ({
         </div>
 
         <ul className="playlist-tree">
-          {playlists.map(pl => (
-            <li key={pl.id} className="playlist">
-              {pl.type === 'ai' ? (
-                <Zap size={16} className="neon-text-cyan" />
-              ) : (
-                <Coffee size={16} style={{ color: 'var(--text-muted)' }} />
-              )}
-              <span>{pl.name}</span>
+          {playlists.map(pl => {
+            const isActive = selectedPlaylistId === pl.id;
+            return (
+              <li 
+                key={pl.id} 
+                className={`playlist ${isActive ? 'active-playlist' : ''}`}
+                onClick={() => onPlaylistSelect(pl.id)}
+                style={{ 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '4px',
+                  marginBottom: '4px',
+                  transition: 'background 0.2s, border-color 0.2s',
+                  border: isActive ? '1px solid var(--neon-pink)' : '1px solid transparent',
+                  background: isActive ? 'rgba(255, 0, 127, 0.05)' : 'transparent'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                  {pl.type === 'ai' ? (
+                    <Zap size={16} className={isActive ? "neon-text-pink" : "neon-text-cyan"} />
+                  ) : (
+                    <Coffee size={16} style={{ color: isActive ? 'var(--neon-pink)' : 'var(--text-muted)' }} />
+                  )}
+                  <span style={{ 
+                    whiteSpace: 'nowrap', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis',
+                    fontWeight: isActive ? 'bold' : 'normal',
+                    color: isActive ? '#fff' : 'var(--text-muted)',
+                    fontSize: '0.85rem'
+                  }} title={pl.name}>
+                    {pl.name}
+                  </span>
+                  <span style={{ fontSize: '0.65rem', opacity: 0.5, color: 'var(--text-muted)' }}>({pl.tracks?.length || 0})</span>
+                </div>
+                
+                <button
+                  className="playlist-delete-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`プレイリスト「${pl.name}」を削除しますか？`)) {
+                      onDeletePlaylist(pl.id);
+                    }
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'color 0.2s',
+                    marginLeft: '8px'
+                  }}
+                  title="プレイリスト削除"
+                >
+                  <Trash2 size={13} className="trash-icon" />
+                </button>
+              </li>
+            );
+          })}
+          
+          {playlists.length === 0 && (
+            <li className="playlist" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none', padding: '10px' }}>
+              (プレイリストがありません)
             </li>
-          ))}
+          )}
         </ul>
       </div>
     </aside>

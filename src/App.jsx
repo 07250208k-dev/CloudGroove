@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive } from 'lucide-react';
+import ReactDOM from 'react-dom';
+import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus } from 'lucide-react';
 import DriveLibrary from './components/DriveLibrary';
 import SpectrumVisualizer from './components/SpectrumVisualizer';
 import Player from './components/Player';
@@ -7,6 +8,34 @@ import AIDJ from './components/AIDJ';
 import FullScreenPlayer from './components/FullScreenPlayer';
 
 function App() {
+  const [renderError, setRenderError] = useState(null);
+
+  // グローバルエラー監視（マウント直後に登録）
+  useEffect(() => {
+    const handleError = (event) => {
+      setRenderError({
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error ? event.error.stack : null
+      });
+    };
+    const handleRejection = (event) => {
+      setRenderError({
+        message: `Unhandled Promise Rejection: ${event.reason}`,
+        error: event.reason ? event.reason.stack : null
+      });
+    };
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
+
+  const [pipWindow, setPipWindow] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showAIDJ, setShowAIDJ] = useState(false);
   const [showEQ, setShowEQ] = useState(false);
@@ -17,13 +46,29 @@ function App() {
   // Google Drive & Auth States
   const [clientId, setClientId] = useState(localStorage.getItem('cg_client_id') || '210521239989-t2bvp162ed8mntukhjndrg3b5tgc2fmq.apps.googleusercontent.com');
   const [accessToken, setAccessToken] = useState(localStorage.getItem('cg_access_token') || '');
-  const [userProfile, setUserProfile] = useState(JSON.parse(localStorage.getItem('cg_user_profile')) || null);
+  const [userProfile, setUserProfile] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cg_user_profile');
+      if (saved && saved !== 'undefined') {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to parse user profile from localStorage:", e);
+    }
+    return null;
+  });
   const [tracks, setTracks] = useState([]);
   const [folders, setFolders] = useState([]);
   const [audioFolderIds, setAudioFolderIds] = useState(new Set());
   const [audioFolderCounts, setAudioFolderCounts] = useState({});
   const [hasScanned, setHasScanned] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
+
+  // Playlist States & Operations
+  const [playlists, setPlaylists] = useState([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
+  const [activeTrackForPlaylist, setActiveTrackForPlaylist] = useState(null);
+
   const [currentTrack, setCurrentTrack] = useState(null);
   const [trackMetadata, setTrackMetadata] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,6 +115,170 @@ function App() {
       setShowEQ(false);
     }
   };
+
+  // --- Google アカウント別プレイリストのロードと永続化 ---
+  useEffect(() => {
+    const key = (userProfile && userProfile.sub) ? `cg_playlists_${userProfile.sub}` : 'cg_playlists_guest';
+    const saved = localStorage.getItem(key);
+    let loadedPlaylists = null;
+    
+    if (saved) {
+      try {
+        loadedPlaylists = JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse saved playlists from localStorage:", e);
+      }
+    }
+    
+    if (loadedPlaylists && Array.isArray(loadedPlaylists)) {
+      setPlaylists(loadedPlaylists);
+    } else {
+      // アカウント切り替え時の初期デモプレイリスト
+      const demoPlaylists = [
+        { id: 'pl1', name: '🌙 ナイトドライブ (AI)', type: 'ai', tracks: [] },
+        { id: 'pl2', name: '💻 集中コーディング', type: 'manual', tracks: [] }
+      ];
+      setPlaylists(demoPlaylists);
+      localStorage.setItem(key, JSON.stringify(demoPlaylists));
+    }
+    setSelectedPlaylistId(null);
+  }, [userProfile]);
+
+  const savePlaylists = (updatedPlaylists) => {
+    if (!Array.isArray(updatedPlaylists)) return;
+    setPlaylists(updatedPlaylists);
+    const key = (userProfile && userProfile.sub) ? `cg_playlists_${userProfile.sub}` : 'cg_playlists_guest';
+    localStorage.setItem(key, JSON.stringify(updatedPlaylists));
+  };
+
+  const handleCreatePlaylist = (name, type = 'manual', promptText = '') => {
+    let playlistTracks = [];
+    
+    if (type === 'ai' && promptText && tracks.length > 0) {
+      const query = promptText.toLowerCase();
+      
+      // 1. キーワードマッピングの定義 (SF・サイバーパンク風)
+      const keywords = {
+        cyber: ['cyber', 'synth', 'neon', 'future', 'grid', 'retro', 'hack', 'matrix', 'system', 'electronic', 'サイバー', 'シンセ', '電子', '未来', 'テクノ'],
+        chill: ['chill', 'lofi', 'night', 'midnight', 'sleep', 'relax', 'ambient', 'soft', 'slow', '🌙', '夜', '深夜', 'チル', 'リラックス', '雨', '睡眠'],
+        energy: ['rock', 'metal', 'hype', 'fast', 'hard', 'dance', 'club', 'beat', 'bass', 'run', 'drive', '🔥', '激しい', 'ロック', 'ドライブ', 'クラブ', 'ビート', '爆音'],
+        vocal: ['vocal', 'sing', 'pop', 'uta', 'song', '歌', 'ボーカル', 'ポップ', 'アニソン']
+      };
+      
+      // プロンプトに含まれるジャンル/ムードを判定
+      let matchedCategories = [];
+      if (query.includes('サイバー') || query.includes('未来') || query.includes('電子') || query.includes('cyber') || query.includes('synth') || query.includes('インスト') || query.includes('テクノ')) {
+        matchedCategories.push('cyber');
+      }
+      if (query.includes('チル') || query.includes('夜') || query.includes('静か') || query.includes('chill') || query.includes('lofi') || query.includes('眠')) {
+        matchedCategories.push('chill');
+      }
+      if (query.includes('激しい') || query.includes('テンション') || query.includes('ロック') || query.includes('ドライブ') || query.includes('高') || query.includes('rock') || query.includes('energy') || query.includes('走')) {
+        matchedCategories.push('energy');
+      }
+      if (query.includes('歌') || query.includes('ボーカル') || query.includes('ポップ') || query.includes('pop')) {
+        matchedCategories.push('vocal');
+      }
+      
+      // 2. スコアリングによる選曲
+      const scoredTracks = tracks.map(track => {
+        let score = 0;
+        const trackNameLower = (track.name || '').toLowerCase();
+        
+        // カテゴリーキーワードマッチング
+        matchedCategories.forEach(cat => {
+          keywords[cat].forEach(word => {
+            if (trackNameLower.includes(word)) {
+              score += 10;
+            }
+          });
+        });
+        
+        // 部分一致マッチング（プロンプトの単語が曲名に含まれるか）
+        const promptWords = query.split(/[\s,，、。・]+/).filter(w => w.length > 1);
+        promptWords.forEach(word => {
+          if (trackNameLower.includes(word)) {
+            score += 15;
+          }
+        });
+        
+        // インストゥルメンタル判定
+        if (query.includes('インスト') && (trackNameLower.includes('inst') || trackNameLower.includes('off vocal') || trackNameLower.includes('karaoke'))) {
+          score += 20;
+        }
+        
+        return { track, score };
+      });
+      
+      // スコア順にソートし、加点された曲を抽出
+      let candidates = scoredTracks
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(item => item.track);
+        
+      // マッチする曲が少ない（3曲未満）場合は、ドライブ内からインテリジェントにランダムピックアップ
+      if (candidates.length < 3) {
+        const shuffled = [...tracks].sort(() => 0.5 - Math.random());
+        candidates = shuffled.slice(0, Math.min(6, tracks.length));
+      } else {
+        candidates = candidates.slice(0, 8);
+      }
+      
+      playlistTracks = candidates;
+      
+      // 選曲完了をオシャレなSFダイアログで通知
+      const songListText = playlistTracks.map((t, idx) => `${idx + 1}. ${t.name.substring(0, 40)}`).join('\n');
+      alert(`🤖 [SYS.AI.DJ]: ドライブ内の全音声ファイルを解析完了。\n\n「${promptText}」に合致する音響メタデータを検出しました。\n以下の ${playlistTracks.length} 曲を自動選曲し、プレイリストに同期展開します：\n\n${songListText}`);
+    } else if (type === 'ai' && tracks.length === 0) {
+      alert(`🤖 [SYS.AI.DJ]: ドライブ内の音声ファイルが同期されていません。\n先にGoogle Driveと「同期」し、曲を読み込んでから実行してください。 (空のプレイリストを作成します)`);
+    }
+    
+    const newPl = {
+      id: `pl-${Date.now()}`,
+      name: name,
+      type: type,
+      tracks: playlistTracks
+    };
+    savePlaylists([...playlists, newPl]);
+  };
+
+  const handleDeletePlaylist = (playlistId) => {
+    const updated = playlists.filter(p => p.id !== playlistId);
+    savePlaylists(updated);
+    if (selectedPlaylistId === playlistId) {
+      setSelectedPlaylistId(null);
+    }
+  };
+
+  const handleAddTrackToPlaylist = (playlistId, track) => {
+    const updated = playlists.map(p => {
+      if (p.id === playlistId) {
+        if (p.tracks.some(t => t.id === track.id)) {
+          alert('この曲はすでにプレイリストに登録されています。');
+          return p;
+        }
+        return { ...p, tracks: [...p.tracks, track] };
+      }
+      return p;
+    });
+    savePlaylists(updated);
+    setActiveTrackForPlaylist(null); // 追加後にメニューを閉じる
+  };
+
+  const handleRemoveTrackFromPlaylist = (playlistId, trackId) => {
+    const updated = playlists.map(p => {
+      if (p.id === playlistId) {
+        return { ...p, tracks: p.tracks.filter(t => t.id !== trackId) };
+      }
+      return p;
+    });
+    savePlaylists(updated);
+  };
+
+  // 表示用曲リスト（プレイリスト選択時はその中身、それ以外はGoogle Driveの全曲）
+  const displayTracks = (selectedPlaylistId && Array.isArray(playlists))
+    ? (playlists.find(p => p.id === selectedPlaylistId)?.tracks || [])
+    : (Array.isArray(tracks) ? tracks : []);
 
   // Google OAuth2 Token Client Reference
   const tokenClientRef = useRef(null);
@@ -216,6 +425,7 @@ function App() {
         // 【100%厳密化】クライアント側での二重の音声ファイル・拡張子フィルター
         const audioExtensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.m4r'];
         const filteredFiles = (data.files || []).filter(file => {
+          if (!file || !file.name) return false;
           const nameLower = file.name.toLowerCase();
           const hasAudioExtension = audioExtensions.some(ext => nameLower.endsWith(ext));
           const isAudioMime = file.mimeType && file.mimeType.startsWith('audio/');
@@ -440,32 +650,62 @@ function App() {
     }
   };
 
-  // デスクトップへ投射 (Picture-in-Picture)
+  // デスクトップへ投射 (Document Picture-in-Picture)
   const togglePiP = async () => {
+    if (pipWindow) {
+      pipWindow.close();
+      setPipWindow(null);
+      return;
+    }
+
     try {
-      const canvas = document.querySelector('canvas');
-      if (!canvas) {
-        alert('描画元のスペクトルが見つかりません');
+      if (!window.documentPictureInPicture) {
+        alert('このブラウザは文書Picture-in-Picture APIをサポートしていません。最新のChrome/Edgeをご使用ください。');
         return;
       }
 
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else {
-        if (videoRef.current) {
-          // canvasから映像ストリームを取得 (30fps)
-          if (!videoRef.current.srcObject) {
-            const stream = canvas.captureStream(30);
-            videoRef.current.srcObject = stream;
+      const w = await window.documentPictureInPicture.requestWindow({
+        width: 320,
+        height: 380,
+      });
+
+      // 親ウィンドウのスタイルシートをコピーして適用
+      const allStyleSheets = Array.from(document.styleSheets);
+      allStyleSheets.forEach((styleSheet) => {
+        try {
+          const cssRules = Array.from(styleSheet.cssRules)
+            .map((rule) => rule.cssText)
+            .join('\n');
+          const style = w.document.createElement('style');
+          style.textContent = cssRules;
+          w.document.head.appendChild(style);
+        } catch (e) {
+          if (styleSheet.href) {
+            const link = w.document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = styleSheet.href;
+            w.document.head.appendChild(link);
           }
-          
-          await videoRef.current.play();
-          await videoRef.current.requestPictureInPicture();
         }
-      }
+      });
+
+      // Google Fonts などのフォントリンクのコピー
+      const fontLinks = document.querySelectorAll('link[href*="fonts.googleapis.com"], link[href*="fonts.gstatic.com"]');
+      fontLinks.forEach(link => {
+        w.document.head.appendChild(link.cloneNode(true));
+      });
+
+      w.document.body.className = 'pip-body';
+      w.document.title = 'CloudGroove Controller';
+
+      w.addEventListener('pagehide', () => {
+        setPipWindow(null);
+      });
+
+      setPipWindow(w);
     } catch (err) {
-      alert('デスクトップ投射 (PiP) の起動に失敗しました。\n※ブラウザが対応しており、一度再生を行ってから実行してください。');
-      console.error(err);
+      console.error('Failed to open Document PiP:', err);
+      alert('文書PiPの起動に失敗しました。');
     }
   };
 
@@ -473,25 +713,18 @@ function App() {
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'hidden') {
-        // ユーザーが別タブや別ウィンドウに移動した（非アクティブ化）
-        if (isPlaying && currentTrack && !document.pictureInPictureElement && videoRef.current) {
+        if (isPlaying && currentTrack && !pipWindow) {
           try {
-            const canvas = document.querySelector('canvas');
-            if (canvas) {
-              const stream = canvas.captureStream(30);
-              videoRef.current.srcObject = stream;
-              await videoRef.current.play();
-              await videoRef.current.requestPictureInPicture();
-            }
+            await togglePiP();
           } catch (err) {
             console.warn('バックグラウンド移行時の自動PiP起動に失敗しました:', err);
           }
         }
       } else {
-        // ユーザーがタブに戻ってきた（アクティブ化）
-        if (document.pictureInPictureElement) {
+        if (pipWindow) {
           try {
-            await document.exitPictureInPicture();
+            pipWindow.close();
+            setPipWindow(null);
           } catch (err) {
             console.warn('アクティブ復帰時のPiP自動クローズに失敗しました:', err);
           }
@@ -503,7 +736,7 @@ function App() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, currentTrack, pipWindow]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -538,30 +771,30 @@ function App() {
   };
 
   const playNextTrack = () => {
-    if (tracks.length === 0 || !currentTrack) return;
+    if (displayTracks.length === 0 || !currentTrack) return;
     
     if (repeatMode === 'one') {
       playTrack(currentTrack);
       return;
     }
 
-    const currentIndex = tracks.findIndex(t => t.id === currentTrack.id);
+    const currentIndex = displayTracks.findIndex(t => t.id === currentTrack.id);
     
     if (isShuffle) {
-      if (tracks.length > 1) {
+      if (displayTracks.length > 1) {
         let randomIndex;
         do {
-          randomIndex = Math.floor(Math.random() * tracks.length);
+          randomIndex = Math.floor(Math.random() * displayTracks.length);
         } while (randomIndex === currentIndex);
-        playTrack(tracks[randomIndex]);
+        playTrack(displayTracks[randomIndex]);
       } else {
-        playTrack(tracks[0]);
+        playTrack(displayTracks[0]);
       }
     } else {
-      if (currentIndex !== -1 && currentIndex < tracks.length - 1) {
-        playTrack(tracks[currentIndex + 1]);
+      if (currentIndex !== -1 && currentIndex < displayTracks.length - 1) {
+        playTrack(displayTracks[currentIndex + 1]);
       } else if (repeatMode === 'all') {
-        playTrack(tracks[0]);
+        playTrack(displayTracks[0]);
       } else {
         setIsPlaying(false);
         if (audioRef.current) {
@@ -573,24 +806,24 @@ function App() {
   };
 
   const playPrevTrack = () => {
-    if (tracks.length === 0 || !currentTrack) return;
-    const currentIndex = tracks.findIndex(t => t.id === currentTrack.id);
+    if (displayTracks.length === 0 || !currentTrack) return;
+    const currentIndex = displayTracks.findIndex(t => t.id === currentTrack.id);
     
     if (isShuffle) {
-      if (tracks.length > 1) {
+      if (displayTracks.length > 1) {
         let randomIndex;
         do {
-          randomIndex = Math.floor(Math.random() * tracks.length);
+          randomIndex = Math.floor(Math.random() * displayTracks.length);
         } while (randomIndex === currentIndex);
-        playTrack(tracks[randomIndex]);
+        playTrack(displayTracks[randomIndex]);
       } else {
-        playTrack(tracks[0]);
+        playTrack(displayTracks[0]);
       }
     } else {
       if (currentIndex > 0) {
-        playTrack(tracks[currentIndex - 1]);
+        playTrack(displayTracks[currentIndex - 1]);
       } else if (repeatMode === 'all') {
-        playTrack(tracks[tracks.length - 1]);
+        playTrack(displayTracks[displayTracks.length - 1]);
       }
     }
   };
@@ -629,23 +862,124 @@ function App() {
     return `${mb.toFixed(1)} MB`;
   };
 
+  if (renderError) {
+    return (
+      <div style={{
+        padding: '30px',
+        backgroundColor: '#12000c',
+        color: '#ff66aa',
+        fontFamily: 'Consolas, monospace',
+        minHeight: '100vh',
+        boxSizing: 'border-box',
+        border: '3px solid var(--neon-pink, #ff007f)',
+        boxShadow: '0 0 30px rgba(255, 0, 127, 0.4)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
+        <h1 style={{ 
+          color: '#fff', 
+          textShadow: '0 0 10px #ff007f, 0 0 20px #ff007f', 
+          borderBottom: '2px solid #ff007f', 
+          paddingBottom: '15px',
+          margin: 0,
+          fontFamily: 'Orbitron, sans-serif',
+          letterSpacing: '2px'
+        }}>
+          [⚠️ SYSTEM CRASH DETECTED]
+        </h1>
+        <div style={{ backgroundColor: 'rgba(0,0,0,0.5)', padding: '20px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <p style={{ margin: '0 0 10px 0', fontSize: '1.1rem' }}>
+            <strong style={{ color: '#fff' }}>ERROR MESSAGE:</strong> {renderError.message}
+          </p>
+          {renderError.filename && (
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#88a' }}>
+              <strong>FILE:</strong> {renderError.filename} (Line: {renderError.lineno}, Col: {renderError.colno})
+            </p>
+          )}
+        </div>
+        
+        {renderError.error && (
+          <pre style={{
+            backgroundColor: '#050005',
+            padding: '20px',
+            borderRadius: '6px',
+            border: '1px solid rgba(255, 0, 127, 0.2)',
+            overflowX: 'auto',
+            color: '#ff88cc',
+            fontSize: '0.85rem',
+            lineHeight: '1.5',
+            margin: 0
+          }}>
+            {renderError.error}
+          </pre>
+        )}
+        
+        <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
+          <button 
+            onClick={() => {
+              localStorage.clear();
+              sessionStorage.clear();
+              window.location.reload();
+            }}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#ff007f',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontFamily: 'Orbitron, sans-serif',
+              boxShadow: '0 0 15px #ff007f',
+              transition: 'transform 0.1s'
+            }}
+          >
+            キャッシュと全設定を強制クリアしてリセット
+          </button>
+          
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: 'transparent',
+              color: '#00f3ff',
+              border: '1px solid #00f3ff',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontFamily: 'Orbitron, sans-serif',
+              boxShadow: '0 0 10px rgba(0, 243, 255, 0.2)'
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
-      {/* デスクトップ投射 (PiP) 用の隠しvideo要素 */}
-      <video 
-        ref={videoRef} 
-        style={{ display: 'none' }} 
-        playsInline 
-        muted 
-      />
 
       <DriveLibrary 
         tracks={tracks} 
         folders={hasScanned ? folders.filter(f => audioFolderIds.has(f.id)) : folders} 
         selectedFolderId={selectedFolderId}
-        onFolderSelect={setSelectedFolderId}
+        onFolderSelect={(folderId) => {
+          setSelectedFolderId(folderId);
+          setSelectedPlaylistId(null); // フォルダ選択時はプレイリスト選択を解除
+        }}
         currentTrack={currentTrack} 
         folderCounts={audioFolderCounts}
+        playlists={playlists}
+        selectedPlaylistId={selectedPlaylistId}
+        onPlaylistSelect={(playlistId) => {
+          setSelectedPlaylistId(playlistId);
+          setSelectedFolderId(null); // プレイリスト選択時はフォルダ選択を解除
+        }}
+        onCreatePlaylist={handleCreatePlaylist}
+        onDeletePlaylist={handleDeletePlaylist}
       />
 
       <main className="main-content">
@@ -705,26 +1039,35 @@ function App() {
                 <LogIn size={16} style={{ marginRight: '8px' }} /> Googleアカウントと同期する
               </button>
             </div>
-          ) : tracks.length === 0 ? (
+          ) : displayTracks.length === 0 ? (
             <div className="sync-prompt">
-              <h3>音声ファイルが見つかりません</h3>
-              <p>選択された場所（またはマイドライブ全体）に再生可能な音声ファイル（.mp3, .wav, .m4a など）があるかご確認ください。</p>
-              <button className="play-generated-btn" onClick={() => fetchDriveFiles(accessToken, selectedFolderId)} style={{ marginTop: '15px' }}>
-                <RefreshCw size={16} style={{ marginRight: '8px' }} /> 再読み込み
-              </button>
+              <HardDrive size={48} className="neon-text-cyan" />
+              <h3>{selectedPlaylistId ? 'プレイリストが空です' : '音声ファイルが見つかりません'}</h3>
+              <p>
+                {selectedPlaylistId 
+                  ? 'G-Drive（フォルダ）から曲を選択し、ホバー時に表示される「＋」アイコンからこのプレイリストに追加してください。'
+                  : '選択された場所（またはマイドライブ全体）に再生可能な音声ファイル（.mp3, .wav, .m4a など）があるかご確認ください。'}
+              </p>
+              {!selectedPlaylistId && (
+                <button className="play-generated-btn" onClick={() => fetchDriveFiles(accessToken, selectedFolderId)} style={{ marginTop: '15px' }}>
+                  <RefreshCw size={16} style={{ marginRight: '8px' }} /> 再読み込み
+                </button>
+              )}
             </div>
           ) : (
             <table className="tracklist">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th style={{ width: '50px' }}>#</th>
                   <th>タイトル</th>
-                  <th>ファイルサイズ</th>
-                  <th>追加日</th>
+                  <th style={{ width: '120px' }}>ファイルサイズ</th>
+                  <th style={{ width: '150px' }}>追加日</th>
+                  <th style={{ width: '80px', textAlign: 'center' }}>[操作]</th>
                 </tr>
               </thead>
               <tbody>
-                {tracks.map((track, index) => {
+                {displayTracks.map((track, index) => {
+                  if (!track || !track.id) return null;
                   const isCurrent = currentTrack && currentTrack.id === track.id;
                   return (
                     <tr 
@@ -741,6 +1084,55 @@ function App() {
                       <td className="track-title-cell">{track.name}</td>
                       <td>{getByteSizeText(track.size)}</td>
                       <td>{new Date(track.createdTime).toLocaleDateString()}</td>
+                      <td className="track-actions-cell" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button 
+                            className="track-action-btn add-btn"
+                            title="プレイリストに追加"
+                            onClick={() => setActiveTrackForPlaylist(activeTrackForPlaylist?.id === track.id ? null : track)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--neon-cyan)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: 0.6,
+                              transition: 'opacity 0.2s, transform 0.2s'
+                            }}
+                          >
+                            <Plus size={16} />
+                          </button>
+                          
+                          {selectedPlaylistId && (
+                            <button 
+                              className="track-action-btn remove-btn"
+                              title="プレイリストから削除"
+                              onClick={() => {
+                                if (confirm(`「${track.name}」をこのプレイリストから削除しますか？`)) {
+                                  handleRemoveTrackFromPlaylist(selectedPlaylistId, track.id);
+                                }
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--neon-pink)',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: 0.6,
+                                transition: 'opacity 0.2s'
+                              }}
+                            >
+                              <X size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -918,7 +1310,7 @@ function App() {
           onClose={() => setShowFullScreenPlayer(false)}
           onTogglePiP={togglePiP}
           isShuffle={isShuffle}
-          onToggleShuffle={() => setIsShuffle(!isShuffle)}
+          onToggleShuffle={() => setIsShuffle(prev => !prev)}
           repeatMode={repeatMode}
           onToggleRepeat={() => setRepeatMode(prev => prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none')}
           eqGains={eqGains}
@@ -926,8 +1318,181 @@ function App() {
           onApplyPreset={applyEqPreset}
         />
       )}
+
+      {/* プレイリスト追加用のサイバーパンク・フローティングドロップダウン */}
+      {activeTrackForPlaylist && (
+        <div className="cyber-dropdown-overlay" onClick={() => setActiveTrackForPlaylist(null)}>
+          <div className="cyber-dropdown" onClick={(e) => e.stopPropagation()}>
+            <div className="dropdown-header">
+              <span>[ADD TO PLAYLIST]</span>
+              <button className="dropdown-close" onClick={() => setActiveTrackForPlaylist(null)}><X size={14} /></button>
+            </div>
+            <div className="dropdown-title">「{activeTrackForPlaylist.name}」を追加する先:</div>
+            <ul className="dropdown-list">
+              {playlists.map(pl => (
+                <li 
+                  key={pl.id} 
+                  onClick={() => handleAddTrackToPlaylist(pl.id, activeTrackForPlaylist)}
+                >
+                  <span className="dropdown-pl-name">{pl.name}</span>
+                  <span className="dropdown-pl-count">({pl.tracks?.length || 0} trks)</span>
+                </li>
+              ))}
+              {playlists.length === 0 && (
+                <li style={{ color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none' }}>
+                  プレイリストがありません
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* フローティング PiP ウィンドウへの React Portal レンダリング */}
+      {pipWindow && ReactDOM.createPortal(
+        <PipController 
+          isPlaying={isPlaying}
+          currentTrack={currentTrack}
+          trackMetadata={trackMetadata}
+          isShuffle={isShuffle}
+          repeatMode={repeatMode}
+          onPlayPause={handlePlayPauseToggle}
+          onNext={playNextTrack}
+          onPrev={playPrevTrack}
+          onShuffle={() => setIsShuffle(prev => !prev)}
+          onRepeat={() => setRepeatMode(prev => prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none')}
+        />,
+        pipWindow.document.body
+      )}
     </div>
   );
 }
 
 export default App;
+
+// Document PiP 用のフローティング・サイバーコントローラーコンポーネント
+function PipController({
+  isPlaying,
+  currentTrack,
+  trackMetadata,
+  isShuffle,
+  repeatMode,
+  onPlayPause,
+  onNext,
+  onPrev,
+  onShuffle,
+  onRepeat
+}) {
+  const shuffleRef = useRef(null);
+  const prevRef = useRef(null);
+  const playPauseRef = useRef(null);
+  const nextRef = useRef(null);
+  const repeatRef = useRef(null);
+
+  useEffect(() => {
+    const sBtn = shuffleRef.current;
+    const pBtn = prevRef.current;
+    const ppBtn = playPauseRef.current;
+    const nBtn = nextRef.current;
+    const rBtn = repeatRef.current;
+
+    // React Portalでは別ウィンドウ内のイベントバブリングが親ウィンドウのReactでキャッチできないため、
+    // ネイティブな addEventListener を直接対象のDOM要素にバインドすることでイベント発火を100%保証します。
+    if (sBtn) sBtn.addEventListener('click', onShuffle);
+    if (pBtn) pBtn.addEventListener('click', onPrev);
+    if (ppBtn) ppBtn.addEventListener('click', onPlayPause);
+    if (nBtn) nBtn.addEventListener('click', onNext);
+    if (rBtn) rBtn.addEventListener('click', onRepeat);
+
+    return () => {
+      if (sBtn) sBtn.removeEventListener('click', onShuffle);
+      if (pBtn) pBtn.removeEventListener('click', onPrev);
+      if (ppBtn) ppBtn.removeEventListener('click', onPlayPause);
+      if (nBtn) nBtn.removeEventListener('click', onNext);
+      if (rBtn) rBtn.removeEventListener('click', onRepeat);
+    };
+  }, [onShuffle, onPrev, onPlayPause, onNext, onRepeat]);
+
+  const title = trackMetadata?.title || currentTrack?.name || '未再生';
+  const artist = trackMetadata?.artist || 'Google Drive 音源';
+  const coverUrl = trackMetadata?.coverUrl || '';
+
+  return (
+    <div className="pip-container">
+      <div className="pip-header">
+        <span className="pip-brand">CLOUDGROOVE</span>
+        <span className="pip-status-glow"></span>
+      </div>
+
+      <div className="pip-art-wrap">
+        <div 
+          className={`pip-album-art ${isPlaying ? 'spinning' : ''}`}
+          style={{
+            backgroundImage: coverUrl ? `url('${coverUrl}')` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        >
+          {!coverUrl && (
+            <div className="pip-art-fallback">
+              <span className="pip-logo-icon">🎧</span>
+            </div>
+          )}
+          <div className="pip-disk-center"></div>
+        </div>
+      </div>
+
+      <div className="pip-meta">
+        <div className="pip-title" title={title}>{title}</div>
+        <div className="pip-artist">{artist}</div>
+      </div>
+
+      <div className="pip-controls">
+        <button 
+          ref={shuffleRef}
+          className={`pip-btn ${isShuffle ? 'active-cyan' : ''}`} 
+          title="シャッフル"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"></path><path d="M4 20L21 3"></path><path d="M21 16v5h-5"></path><path d="M15 15l6 6"></path><path d="M4 4l5 5"></path></svg>
+        </button>
+
+        <button 
+          ref={prevRef}
+          className="pip-btn" 
+          title="前の曲"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+        </button>
+
+        <button 
+          ref={playPauseRef}
+          className="pip-btn-play" 
+          title={isPlaying ? "一時停止" : "再生"}
+        >
+          {isPlaying ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="14" y="4" width="4" height="16" rx="1"></rect><rect x="6" y="4" width="4" height="16" rx="1"></rect></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          )}
+        </button>
+
+        <button 
+          ref={nextRef}
+          className="pip-btn" 
+          title="次の曲"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+        </button>
+
+        <button 
+          ref={repeatRef}
+          className={`pip-btn ${repeatMode !== 'none' ? 'active-pink' : ''}`} 
+          title={`リピート: ${repeatMode === 'one' ? '1曲' : repeatMode === 'all' ? 'すべて' : 'オフ'}`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          {repeatMode === 'one' && <span className="pip-repeat-badge">1</span>}
+        </button>
+      </div>
+    </div>
+  );
+}
