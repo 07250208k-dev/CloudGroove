@@ -15,7 +15,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
 
   // Google Drive & Auth States
-  const [clientId, setClientId] = useState(localStorage.getItem('cg_client_id') || '');
+  const [clientId, setClientId] = useState(localStorage.getItem('cg_client_id') || '210521239989-t2bvp162ed8mntukhjndrg3b5tgc2fmq.apps.googleusercontent.com');
   const [accessToken, setAccessToken] = useState(localStorage.getItem('cg_access_token') || '');
   const [userProfile, setUserProfile] = useState(JSON.parse(localStorage.getItem('cg_user_profile')) || null);
   const [tracks, setTracks] = useState([]);
