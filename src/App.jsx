@@ -37,6 +37,12 @@ function App() {
   const [trackProgress, setTrackProgress] = useState(0);
   const [trackDuration, setTrackDuration] = useState(0);
 
+  // Playback Control & EQ States
+  const [isShuffle, setIsShuffle] = useState(false);
+  const [repeatMode, setRepeatMode] = useState('none'); // 'none' | 'all' | 'one'
+  const [eqGains, setEqGains] = useState([0, 0, 0, 0, 0]); // 60, 230, 910, 3600, 14000 Hz
+  const filtersRef = useRef([]);
+
   // Picture in Picture Video Ref
   const videoRef = useRef(null);
 
@@ -292,17 +298,55 @@ function App() {
       analyser.fftSize = 256;
       
       const source = ctx.createMediaElementSource(audioRef.current);
-      source.connect(analyser);
+      
+      // 5-Band Equalizer Filters (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz)
+      const freqs = [60, 230, 910, 3600, 14000];
+      const filters = freqs.map((freq, i) => {
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'peaking';
+        filter.frequency.value = freq;
+        filter.Q.value = 1.0;
+        filter.gain.value = eqGains[i];
+        return filter;
+      });
+
+      // Connect: source -> filter0 -> ... -> filter4 -> analyser -> destination
+      let currentSource = source;
+      filters.forEach(filter => {
+        currentSource.connect(filter);
+        currentSource = filter;
+      });
+      currentSource.connect(analyser);
       analyser.connect(ctx.destination);
       
       audioContextRef.current = ctx;
       analyserRef.current = analyser;
       sourceRef.current = source;
+      filtersRef.current = filters;
     }
     
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       audioContextRef.current.resume();
     }
+  };
+
+  const handleEqChange = (index, value) => {
+    const newGains = [...eqGains];
+    newGains[index] = Number(value);
+    setEqGains(newGains);
+    
+    if (filtersRef.current && filtersRef.current[index] && audioContextRef.current) {
+      filtersRef.current[index].gain.setValueAtTime(Number(value), audioContextRef.current.currentTime);
+    }
+  };
+
+  const applyEqPreset = (presetGains) => {
+    setEqGains(presetGains);
+    presetGains.forEach((gainVal, i) => {
+      if (filtersRef.current && filtersRef.current[i] && audioContextRef.current) {
+        filtersRef.current[i].gain.setValueAtTime(gainVal, audioContextRef.current.currentTime);
+      }
+    });
   };
 
   const playTrack = async (track) => {
@@ -481,23 +525,73 @@ function App() {
   };
 
   const handleAudioEnded = () => {
-    setIsPlaying(false);
-    playNextTrack();
+    if (repeatMode === 'one') {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play()
+          .then(() => setIsPlaying(true))
+          .catch(err => console.error(err));
+      }
+    } else {
+      playNextTrack();
+    }
   };
 
   const playNextTrack = () => {
     if (tracks.length === 0 || !currentTrack) return;
+    
+    if (repeatMode === 'one') {
+      playTrack(currentTrack);
+      return;
+    }
+
     const currentIndex = tracks.findIndex(t => t.id === currentTrack.id);
-    if (currentIndex !== -1 && currentIndex < tracks.length - 1) {
-      playTrack(tracks[currentIndex + 1]);
+    
+    if (isShuffle) {
+      if (tracks.length > 1) {
+        let randomIndex;
+        do {
+          randomIndex = Math.floor(Math.random() * tracks.length);
+        } while (randomIndex === currentIndex);
+        playTrack(tracks[randomIndex]);
+      } else {
+        playTrack(tracks[0]);
+      }
+    } else {
+      if (currentIndex !== -1 && currentIndex < tracks.length - 1) {
+        playTrack(tracks[currentIndex + 1]);
+      } else if (repeatMode === 'all') {
+        playTrack(tracks[0]);
+      } else {
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+      }
     }
   };
 
   const playPrevTrack = () => {
     if (tracks.length === 0 || !currentTrack) return;
     const currentIndex = tracks.findIndex(t => t.id === currentTrack.id);
-    if (currentIndex > 0) {
-      playTrack(tracks[currentIndex - 1]);
+    
+    if (isShuffle) {
+      if (tracks.length > 1) {
+        let randomIndex;
+        do {
+          randomIndex = Math.floor(Math.random() * tracks.length);
+        } while (randomIndex === currentIndex);
+        playTrack(tracks[randomIndex]);
+      } else {
+        playTrack(tracks[0]);
+      }
+    } else {
+      if (currentIndex > 0) {
+        playTrack(tracks[currentIndex - 1]);
+      } else if (repeatMode === 'all') {
+        playTrack(tracks[tracks.length - 1]);
+      }
     }
   };
 
@@ -669,18 +763,28 @@ function App() {
               <h3><SlidersHorizontal size={18} /> 5-Band Graphic EQ</h3>
               <button className="close-btn" onClick={() => setShowEQ(false)}><X size={20} /></button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', height: '150px', marginBottom: '20px' }}>
-              {[60, 230, 910, 3600, 14000].map(freq => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', height: '160px', marginBottom: '20px', padding: '10px' }}>
+              {[60, 230, 910, 3600, 14000].map((freq, index) => (
                 <div key={freq} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                  <input type="range" min="-12" max="12" defaultValue={Math.floor(Math.random() * 24) - 12} 
-                    style={{ writingMode: 'vertical-lr', direction: 'rtl', height: '100px', accentColor: 'var(--neon-cyan)' }} />
+                  <input 
+                    type="range" 
+                    min="-12" 
+                    max="12" 
+                    value={eqGains[index]} 
+                    onChange={(e) => handleEqChange(index, e.target.value)}
+                    style={{ writingMode: 'vertical-lr', direction: 'rtl', height: '100px', accentColor: 'var(--neon-cyan)', cursor: 'ns-resize' }} 
+                  />
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{freq > 1000 ? `${freq/1000}k` : freq}Hz</span>
+                  <span style={{ fontSize: '0.65rem', color: eqGains[index] > 0 ? 'var(--neon-cyan)' : eqGains[index] < 0 ? 'var(--neon-pink)' : '#888' }}>
+                    {eqGains[index] > 0 ? `+${eqGains[index]}` : eqGains[index]}dB
+                  </span>
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button className="play-generated-btn" style={{flex: 1}}>Cyber Bass</button>
-              <button className="play-generated-btn" style={{flex: 1}}>Retro Radio</button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="play-generated-btn" style={{flex: 1}} onClick={() => applyEqPreset([10, 5, -1, 0, 2])}>Cyber Bass</button>
+              <button className="play-generated-btn" style={{flex: 1}} onClick={() => applyEqPreset([-12, -3, 8, 4, -10])}>Retro Radio</button>
+              <button className="play-generated-btn" style={{flex: 1, backgroundColor: 'rgba(255,255,255,0.08)'}} onClick={() => applyEqPreset([0, 0, 0, 0, 0])}>Bypass</button>
             </div>
           </div>
         )}
@@ -762,6 +866,10 @@ function App() {
         formatTime={formatTime}
         playNext={playNextTrack}
         playPrev={playPrevTrack}
+        isShuffle={isShuffle}
+        onToggleShuffle={() => setIsShuffle(!isShuffle)}
+        repeatMode={repeatMode}
+        onToggleRepeat={() => setRepeatMode(prev => prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none')}
         onPlayerBarClick={() => {
           if (currentTrack) {
             setShowFullScreenPlayer(true);
@@ -809,6 +917,13 @@ function App() {
           analyser={analyserRef.current}
           onClose={() => setShowFullScreenPlayer(false)}
           onTogglePiP={togglePiP}
+          isShuffle={isShuffle}
+          onToggleShuffle={() => setIsShuffle(!isShuffle)}
+          repeatMode={repeatMode}
+          onToggleRepeat={() => setRepeatMode(prev => prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none')}
+          eqGains={eqGains}
+          onEqChange={handleEqChange}
+          onApplyPreset={applyEqPreset}
         />
       )}
     </div>

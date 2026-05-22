@@ -13,7 +13,11 @@ const Player = ({
   formatTime,
   playNext,
   playPrev,
-  onPlayerBarClick
+  onPlayerBarClick,
+  isShuffle,
+  onToggleShuffle,
+  repeatMode,
+  onToggleRepeat
 }) => {
 
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
@@ -67,7 +71,14 @@ const Player = ({
 
       <div className="controls-center" onClick={(e) => e.stopPropagation()}>
         <div className="main-buttons">
-          <button className="control-btn" title="シャッフル (モック)"><Shuffle size={20} /></button>
+          <button 
+            className={`control-btn ${isShuffle ? 'neon-text-cyan' : ''}`} 
+            onClick={onToggleShuffle}
+            disabled={!currentTrack}
+            title={isShuffle ? "シャッフル再生: ON [SYS.SHUFFLE.ACTIVE]" : "シャッフル再生: OFF"}
+          >
+            <Shuffle size={20} />
+          </button>
           <button className="control-btn" onClick={playPrev} disabled={!currentTrack}><SkipBack size={20} /></button>
           <button 
             className="control-btn play-pause-btn" 
@@ -78,7 +89,44 @@ const Player = ({
             {isPlaying ? <Pause size={24} color="#000" /> : <Play size={24} color="#000" />}
           </button>
           <button className="control-btn" onClick={playNext} disabled={!currentTrack}><SkipForward size={20} /></button>
-          <button className="control-btn" title="ループ (モック)"><Repeat size={20} /></button>
+          <button 
+            className={`control-btn ${repeatMode !== 'none' ? 'neon-text-pink' : ''}`} 
+            onClick={onToggleRepeat}
+            disabled={!currentTrack}
+            style={{ position: 'relative' }}
+            title={
+              repeatMode === 'all' 
+                ? "リスト全ループ [SYS.LOOP.ALL]" 
+                : repeatMode === 'one' 
+                  ? "1曲リピート [SYS.LOOP.ONE]" 
+                  : "ループ再生: OFF"
+            }
+          >
+            <Repeat size={20} />
+            {repeatMode === 'one' && (
+              <span 
+                style={{
+                  position: 'absolute',
+                  top: '-2px',
+                  right: '-2px',
+                  fontSize: '0.55rem',
+                  fontWeight: 'bold',
+                  backgroundColor: 'var(--neon-pink)',
+                  color: '#000',
+                  borderRadius: '50%',
+                  width: '11px',
+                  height: '11px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: 'Orbitron',
+                  boxShadow: '0 0 5px var(--neon-pink)'
+                }}
+              >
+                1
+              </span>
+            )}
+          </button>
         </div>
         <div className="progress-container">
           <span className="time">{formatTime(progress)}</span>

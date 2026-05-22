@@ -14,7 +14,14 @@ const FullScreenPlayer = ({
   playPrev,
   analyser,
   onClose,
-  onTogglePiP
+  onTogglePiP,
+  isShuffle,
+  onToggleShuffle,
+  repeatMode,
+  onToggleRepeat,
+  eqGains,
+  onEqChange,
+  onApplyPreset
 }) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
@@ -285,17 +292,108 @@ const FullScreenPlayer = ({
           </div>
         </div>
 
-        {/* 左側：システムステータスログ（サイバー演出） */}
-        <div className="fs-side-panel left-panel">
-          <h3>SYSTEM ANALYSIS</h3>
-          <div className="system-log">
-            <p className="neon-text-cyan">&gt; AUDIO BUFFER INITIALIZED</p>
-            <p>&gt; BITRATE: 320KBPS / STEADY</p>
-            <p>&gt; DECODING STREAM...</p>
-            <p className="neon-text-pink">&gt; BEAT DETECTOR STATUS: OK</p>
-            <p>&gt; FREQ RANGE: 20-20,000HZ</p>
-            <p>&gt; EQ BYPASS: OFF</p>
-            <p className="neon-text-green">&gt; SPECTRUM LOCK: ACTIVE</p>
+        {/* 左側：システムステータスログ（サイバー演出）＆ イコライザーHUD */}
+        <div className="fs-side-panel left-panel" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div>
+            <h3>SYSTEM ANALYSIS</h3>
+            <div className="system-log" style={{ fontSize: '0.75rem', height: '110px' }}>
+              <p className="neon-text-cyan">&gt; AUDIO BUFFER INITIALIZED</p>
+              <p>&gt; BITRATE: 320KBPS / STEADY</p>
+              <p className="neon-text-pink">&gt; BEAT DETECTOR STATUS: OK</p>
+              <p style={{
+                color: eqGains.some(g => g !== 0) ? 'var(--neon-cyan)' : 'var(--text-muted)',
+                animation: eqGains.some(g => g !== 0) ? 'pulse-fast 1s infinite alternate' : 'none'
+              }}>
+                &gt; EQ STATUS: {eqGains.some(g => g !== 0) ? 'ACTIVE' : 'BYPASS (FLAT)'}
+              </p>
+              <p className="neon-text-green">&gt; SPECTRUM LOCK: ACTIVE</p>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid rgba(0, 243, 255, 0.2)', paddingTop: '15px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '0.85rem', color: 'var(--neon-cyan)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+              <Sparkles size={14} /> HUD GRAPHIC EQ
+            </h3>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', flex: 1, padding: '0 5px', minHeight: '120px' }}>
+              {[60, 230, 910, 3600, 14000].map((freq, idx) => (
+                <div key={freq} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
+                  <input 
+                    type="range" 
+                    min="-12" 
+                    max="12" 
+                    value={eqGains[idx]} 
+                    onChange={(e) => onEqChange(idx, e.target.value)}
+                    style={{
+                      writingMode: 'vertical-lr', 
+                      direction: 'rtl', 
+                      height: '80px', 
+                      accentColor: 'var(--neon-cyan)', 
+                      cursor: 'ns-resize',
+                      backgroundColor: 'rgba(0,0,0,0.5)',
+                      outline: 'none'
+                    }} 
+                  />
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px', fontFamily: 'monospace' }}>
+                    {freq > 1000 ? `${freq/1000}k` : freq}
+                  </span>
+                  <span style={{ fontSize: '0.55rem', fontFamily: 'monospace', color: eqGains[idx] > 0 ? 'var(--neon-cyan)' : eqGains[idx] < 0 ? 'var(--neon-pink)' : '#666', marginTop: '2px' }}>
+                    {eqGains[idx] > 0 ? `+${eqGains[idx]}` : eqGains[idx]}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '5px', marginTop: '10px' }}>
+              <button 
+                onClick={() => onApplyPreset([10, 5, -1, 0, 2])}
+                style={{
+                  flex: 1, 
+                  padding: '5px 0', 
+                  fontSize: '0.65rem', 
+                  backgroundColor: 'rgba(0,0,0,0.6)', 
+                  border: '1px solid var(--neon-pink)', 
+                  color: 'var(--neon-pink)',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontFamily: 'Orbitron'
+                }}
+              >
+                BASS
+              </button>
+              <button 
+                onClick={() => onApplyPreset([-12, -3, 8, 4, -10])}
+                style={{
+                  flex: 1, 
+                  padding: '5px 0', 
+                  fontSize: '0.65rem', 
+                  backgroundColor: 'rgba(0,0,0,0.6)', 
+                  border: '1px solid var(--neon-cyan)', 
+                  color: 'var(--neon-cyan)',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontFamily: 'Orbitron'
+                }}
+              >
+                RADIO
+              </button>
+              <button 
+                onClick={() => onApplyPreset([0, 0, 0, 0, 0])}
+                style={{
+                  flex: 1, 
+                  padding: '5px 0', 
+                  fontSize: '0.65rem', 
+                  backgroundColor: 'rgba(255,255,255,0.05)', 
+                  border: '1px solid rgba(255,255,255,0.15)', 
+                  color: '#fff',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontFamily: 'Orbitron'
+                }}
+              >
+                FLAT
+              </button>
+            </div>
           </div>
         </div>
 
@@ -365,7 +463,15 @@ const FullScreenPlayer = ({
 
           {/* メイン操作ボタン */}
           <div className="fs-main-buttons">
-            <button className="fs-btn secondary-btn" title="シャッフル"><Shuffle size={22} /></button>
+            <button 
+              className={`fs-btn secondary-btn ${isShuffle ? 'neon-text-cyan glow-cyan' : ''}`} 
+              onClick={onToggleShuffle}
+              disabled={!currentTrack}
+              title={isShuffle ? "シャッフル再生: ON [SYS.SHUFFLE.ACTIVE]" : "シャッフル再生: OFF"}
+            >
+              <Shuffle size={22} />
+            </button>
+            
             <button className="fs-btn" onClick={playPrev} disabled={!currentTrack}><SkipBack size={26} /></button>
             
             <button 
@@ -377,7 +483,45 @@ const FullScreenPlayer = ({
             </button>
             
             <button className="fs-btn" onClick={playNext} disabled={!currentTrack}><SkipForward size={26} /></button>
-            <button className="fs-btn secondary-btn" title="ループ"><Repeat size={22} /></button>
+            
+            <button 
+              className={`fs-btn secondary-btn ${repeatMode !== 'none' ? 'neon-text-pink glow-pink' : ''}`} 
+              onClick={onToggleRepeat}
+              disabled={!currentTrack}
+              style={{ position: 'relative' }}
+              title={
+                repeatMode === 'all' 
+                  ? "リスト全ループ [SYS.LOOP.ALL]" 
+                  : repeatMode === 'one' 
+                    ? "1曲リピート [SYS.LOOP.ONE]" 
+                    : "ループ再生: OFF"
+              }
+            >
+              <Repeat size={22} />
+              {repeatMode === 'one' && (
+                <span 
+                  style={{
+                    position: 'absolute',
+                    top: '3px',
+                    right: '3px',
+                    fontSize: '0.6rem',
+                    fontWeight: 'bold',
+                    backgroundColor: 'var(--neon-pink)',
+                    color: '#000',
+                    borderRadius: '50%',
+                    width: '13px',
+                    height: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontFamily: 'Orbitron',
+                    boxShadow: '0 0 5px var(--neon-pink)'
+                  }}
+                >
+                  1
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </footer>
