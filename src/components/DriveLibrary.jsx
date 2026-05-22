@@ -6,7 +6,8 @@ const DriveLibrary = ({
   folders = [], 
   selectedFolderId = null,
   onFolderSelect,
-  currentTrack = null 
+  currentTrack = null,
+  folderCounts = {}
 }) => {
   const [showSecret, setShowSecret] = useState(false);
   const [playlists, setPlaylists] = useState([
@@ -36,7 +37,7 @@ const DriveLibrary = ({
 
   // AIプレイリスト作成ボタンのハンドラ
   const handleCreateAIPlaylist = () => {
-    const promptText = prompt('どのような曲調のプレイリストを作成しますか？\n(例:「深夜の高速道路を走るのに合うサイバーなインスト曲」)');
+    const promptText = prompt('どのような曲調のプレイリストを作成しますか？\n(例:「深夜 of 高速道路を走るのに合うサイバーなインスト曲」)');
     if (promptText && promptText.trim()) {
       alert(`AI DJ が「${promptText}」のテーマでドライブ内の音楽を解析中...\n\nプレイリスト「${promptText.substring(0, 10)}... (AI)」を生成しました！`);
       const newPl = {
@@ -73,6 +74,7 @@ const DriveLibrary = ({
           {/* 本物のGoogle Drive上のフォルダ階層を動的にループ */}
           {folders.map(folder => {
             const isActive = selectedFolderId === folder.id;
+            const count = folderCounts[folder.id] || 0;
             return (
               <li 
                 key={folder.id}
@@ -81,14 +83,36 @@ const DriveLibrary = ({
                 style={{ fontWeight: isActive ? 'bold' : 'normal' }}
               >
                 <Folder size={16} className={isActive ? "neon-text-cyan" : ""} /> 
-                <span style={{ 
-                  whiteSpace: 'nowrap', 
-                  overflow: 'hidden', 
-                  textOverflow: 'ellipsis', 
-                  maxWidth: '180px' 
-                }} title={folder.name}>
-                  {folder.name}
-                </span>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  width: '100%',
+                  minWidth: 0
+                }}>
+                  <span style={{ 
+                    whiteSpace: 'nowrap', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis', 
+                    marginRight: '8px' 
+                  }} title={folder.name}>
+                    {folder.name}
+                  </span>
+                  {count > 0 && (
+                    <span className="cyber-folder-badge" style={{
+                      fontSize: '0.65rem',
+                      fontFamily: 'monospace',
+                      color: isActive ? 'var(--neon-pink)' : 'var(--neon-cyan)',
+                      background: 'rgba(0, 243, 255, 0.05)',
+                      border: `1px solid ${isActive ? 'rgba(255,0,127,0.3)' : 'rgba(0,243,255,0.15)'}`,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      flexShrink: 0
+                    }}>
+                      {count} trk
+                    </span>
+                  )}
+                </div>
               </li>
             );
           })}

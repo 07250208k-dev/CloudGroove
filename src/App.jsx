@@ -4,12 +4,14 @@ import DriveLibrary from './components/DriveLibrary';
 import SpectrumVisualizer from './components/SpectrumVisualizer';
 import Player from './components/Player';
 import AIDJ from './components/AIDJ';
+import FullScreenPlayer from './components/FullScreenPlayer';
 
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showAIDJ, setShowAIDJ] = useState(false);
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Google Drive & Auth States
@@ -18,8 +20,12 @@ function App() {
   const [userProfile, setUserProfile] = useState(JSON.parse(localStorage.getItem('cg_user_profile')) || null);
   const [tracks, setTracks] = useState([]);
   const [folders, setFolders] = useState([]);
+  const [audioFolderIds, setAudioFolderIds] = useState(new Set());
+  const [audioFolderCounts, setAudioFolderCounts] = useState({});
+  const [hasScanned, setHasScanned] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [currentTrack, setCurrentTrack] = useState(null);
+  const [trackMetadata, setTrackMetadata] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Audio & Web Audio API Refs
@@ -30,6 +36,9 @@ function App() {
   const [audioUrl, setAudioUrl] = useState('');
   const [trackProgress, setTrackProgress] = useState(0);
   const [trackDuration, setTrackDuration] = useState(0);
+
+  // Picture in Picture Video Ref
+  const videoRef = useRef(null);
 
   // Toggle handlers
   const toggleAIDJ = () => {
@@ -84,23 +93,24 @@ function App() {
     }
   }, [clientId]);
 
-  // トークンがある場合に起動時にプロフィール、フォルダ、ファイルリストを取得
+  // トークン起動時のロード
   useEffect(() => {
     if (accessToken) {
       fetchUserProfile(accessToken);
       fetchDriveFolders(accessToken);
+      scanAudioFolders(accessToken); // 音声フォルダのバックグラウンドスキャンを開始
       fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
     }
   }, [accessToken]);
 
-  // フォルダや検索ワードが変更されたときに自動でファイルを再フェッチ
+  // 選択フォルダ変更時
   useEffect(() => {
     if (accessToken) {
       fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
     }
   }, [selectedFolderId]);
 
-  // ユーザープロフィールの取得
+  // プロフィール取得
   const fetchUserProfile = async (token) => {
     try {
       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -118,10 +128,9 @@ function App() {
     }
   };
 
-  // Google Driveからフォルダ一覧を取得
+  // フォルダ取得
   const fetchDriveFolders = async (token) => {
     try {
-      // ゴミ箱に入っていないフォルダを取得
       const q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
       const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=50`;
       
@@ -138,14 +147,48 @@ function App() {
     }
   };
 
-  // Google Driveから音声ファイルを検索 (音声ファイルのみに厳密フィルタ)
+  // マイドライブ全体の音声ファイルをスキャンし、音楽が入っているフォルダIDと曲数を特定する
+  const scanAudioFolders = async (token) => {
+    try {
+      let q = "trashed = false and (mimeType = 'audio/mpeg' or mimeType = 'audio/mp3' or mimeType = 'audio/wav' or mimeType = 'audio/x-wav' or mimeType = 'audio/mp4' or mimeType = 'audio/x-m4a' or mimeType = 'audio/flac' or mimeType = 'audio/x-flac' or mimeType = 'audio/ogg' or mimeType = 'audio/aac' or mimeType = 'audio/x-aac' or name contains '.mp3' or name contains '.wav' or name contains '.m4a' or name contains '.flac' or name contains '.ogg' or name contains '.aac' or name contains '.m4r')";
+      // parentsフィールドを要求して、最大400件の音声ファイルをスキャン
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,parents)&pageSize=400`;
+      
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        const folderIds = new Set();
+        const counts = {};
+        
+        (data.files || []).forEach(file => {
+          if (file.parents && file.parents.length > 0) {
+            file.parents.forEach(pId => {
+              folderIds.add(pId);
+              counts[pId] = (counts[pId] || 0) + 1;
+            });
+          }
+        });
+        
+        setAudioFolderCounts(counts);
+        setAudioFolderIds(folderIds);
+      }
+    } catch (err) {
+      console.error('音声フォルダスキャンエラー:', err);
+    } finally {
+      setHasScanned(true);
+    }
+  };
+
+  // ファイル取得 (音声ファイル100%厳密フィルター)
   const fetchDriveFiles = async (token, folderId = null, query = '') => {
     setIsLoading(true);
     try {
-      // 厳密に音声ファイルのみを対象にする検索条件 (ゴミ箱 trashed = false は必須)
-      let q = "trashed = false and (mimeType contains 'audio/' or name contains '.mp3' or name contains '.wav' or name contains '.m4a' or name contains '.flac' or name contains '.ogg' or name contains '.aac')";
+      // Google Drive APIのqパラメータにおいてmimeType containsは使えないため、完全一致(=)の論理和とname containsを結合した厳密クエリを使用
+      let q = "trashed = false and (mimeType = 'audio/mpeg' or mimeType = 'audio/mp3' or mimeType = 'audio/wav' or mimeType = 'audio/x-wav' or mimeType = 'audio/mp4' or mimeType = 'audio/x-m4a' or mimeType = 'audio/flac' or mimeType = 'audio/x-flac' or mimeType = 'audio/ogg' or mimeType = 'audio/aac' or mimeType = 'audio/x-aac' or name contains '.mp3' or name contains '.wav' or name contains '.m4a' or name contains '.flac' or name contains '.ogg' or name contains '.aac' or name contains '.m4r')";
       
-      // 特定のフォルダが選択されている場合、その配下のみに絞る
       if (folderId) {
         q = `'${folderId}' in parents and (${q})`;
       }
@@ -154,7 +197,8 @@ function App() {
         q = `(${q}) and name contains '${query}'`;
       }
       
-      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime)&pageSize=100`;
+      // 各ファイルのparents（親フォルダ）も要求する
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,parents)&pageSize=100`;
       
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -162,7 +206,17 @@ function App() {
       
       if (res.ok) {
         const data = await res.json();
-        setTracks(data.files || []);
+        
+        // 【100%厳密化】クライアント側での二重の音声ファイル・拡張子フィルター
+        const audioExtensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.m4r'];
+        const filteredFiles = (data.files || []).filter(file => {
+          const nameLower = file.name.toLowerCase();
+          const hasAudioExtension = audioExtensions.some(ext => nameLower.endsWith(ext));
+          const isAudioMime = file.mimeType && file.mimeType.startsWith('audio/');
+          return hasAudioExtension || isAudioMime;
+        });
+        
+        setTracks(filteredFiles);
       } else if (res.status === 401) {
         handleLogout();
       } else {
@@ -176,7 +230,7 @@ function App() {
     }
   };
 
-  // 認証ポップアップを起動
+  // ログイン
   const handleLogin = () => {
     if (!clientId) {
       alert('先に設定パネルから「Google クライアント ID」を設定してください。');
@@ -208,8 +262,12 @@ function App() {
     setUserProfile(null);
     setTracks([]);
     setFolders([]);
+    setAudioFolderIds(new Set());
+    setAudioFolderCounts({});
+    setHasScanned(false);
     setSelectedFolderId(null);
     setCurrentTrack(null);
+    setTrackMetadata(null);
     setIsPlaying(false);
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
@@ -268,6 +326,52 @@ function App() {
       setAudioUrl(objectUrl);
       setCurrentTrack(track);
       
+      // 初期メタデータ設定（フォールバック用）
+      const cleanTitle = track.name.replace(/\.[^/.]+$/, "");
+      setTrackMetadata({
+        title: cleanTitle,
+        artist: 'Google Drive 音源',
+        album: 'マイドライブ',
+        coverUrl: ''
+      });
+
+      // ID3タグ解析 (非同期)
+      try {
+        const jsmediatags = window.jsmediatags;
+        if (jsmediatags) {
+          jsmediatags.read(blob, {
+            onSuccess: (tag) => {
+              const tags = tag.tags;
+              let coverUrl = '';
+              
+              if (tags.picture) {
+                const { data, format } = tags.picture;
+                let base64String = '';
+                const len = data.length;
+                for (let i = 0; i < len; i++) {
+                  base64String += String.fromCharCode(data[i]);
+                }
+                coverUrl = `data:${format};base64,${window.btoa(base64String)}`;
+              }
+
+              setTrackMetadata({
+                title: tags.title || cleanTitle,
+                artist: tags.artist || 'Google Drive 音源',
+                album: tags.album || 'マイドライブ',
+                coverUrl: coverUrl
+              });
+            },
+            onError: (error) => {
+              console.warn('ID3タグ読み込み失敗:', error);
+            }
+          });
+        } else {
+          console.warn('jsmediatagsがグローバルスコープに見つかりません');
+        }
+      } catch (e) {
+        console.warn('jsmediatags起動エラー:', e);
+      }
+      
       if (audioRef.current) {
         audioRef.current.src = objectUrl;
         audioRef.current.load();
@@ -292,7 +396,71 @@ function App() {
     }
   };
 
-  // 検索処理
+  // デスクトップへ投射 (Picture-in-Picture)
+  const togglePiP = async () => {
+    try {
+      const canvas = document.querySelector('canvas');
+      if (!canvas) {
+        alert('描画元のスペクトルが見つかりません');
+        return;
+      }
+
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        if (videoRef.current) {
+          // canvasから映像ストリームを取得 (30fps)
+          if (!videoRef.current.srcObject) {
+            const stream = canvas.captureStream(30);
+            videoRef.current.srcObject = stream;
+          }
+          
+          await videoRef.current.play();
+          await videoRef.current.requestPictureInPicture();
+        }
+      }
+    } catch (err) {
+      alert('デスクトップ投射 (PiP) の起動に失敗しました。\n※ブラウザが対応しており、一度再生を行ってから実行してください。');
+      console.error(err);
+    }
+  };
+
+  // タブ切り替え（非アクティブ化）時に自動でデスクトップPiPをポップアップ投射する処理
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'hidden') {
+        // ユーザーが別タブや別ウィンドウに移動した（非アクティブ化）
+        if (isPlaying && currentTrack && !document.pictureInPictureElement && videoRef.current) {
+          try {
+            const canvas = document.querySelector('canvas');
+            if (canvas) {
+              const stream = canvas.captureStream(30);
+              videoRef.current.srcObject = stream;
+              await videoRef.current.play();
+              await videoRef.current.requestPictureInPicture();
+            }
+          } catch (err) {
+            console.warn('バックグラウンド移行時の自動PiP起動に失敗しました:', err);
+          }
+        }
+      } else {
+        // ユーザーがタブに戻ってきた（アクティブ化）
+        if (document.pictureInPictureElement) {
+          try {
+            await document.exitPictureInPicture();
+          } catch (err) {
+            console.warn('アクティブ復帰時のPiP自動クローズに失敗しました:', err);
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isPlaying, currentTrack]);
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (accessToken) {
@@ -369,12 +537,21 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* デスクトップ投射 (PiP) 用の隠しvideo要素 */}
+      <video 
+        ref={videoRef} 
+        style={{ display: 'none' }} 
+        playsInline 
+        muted 
+      />
+
       <DriveLibrary 
         tracks={tracks} 
-        folders={folders} 
+        folders={hasScanned ? folders.filter(f => audioFolderIds.has(f.id)) : folders} 
         selectedFolderId={selectedFolderId}
         onFolderSelect={setSelectedFolderId}
         currentTrack={currentTrack} 
+        folderCounts={audioFolderCounts}
       />
 
       <main className="main-content">
@@ -478,7 +655,13 @@ function App() {
           )}
         </div>
 
-        {showAIDJ && <AIDJ onClose={() => setShowAIDJ(false)} />}
+        {showAIDJ && (
+          <AIDJ 
+            tracks={tracks} 
+            playTrack={playTrack} 
+            onClose={() => setShowAIDJ(false)} 
+          />
+        )}
         
         {showEQ && (
           <div className="side-panel">
@@ -531,7 +714,7 @@ function App() {
                   id="client-id-input"
                 />
                 <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.4' }}>
-                  Google Cloud Consoleで取得した「ウェブ アプリケーション」のクライアントIDを入力してください。
+                  Google Cloud Consoleで取得したクライアントIDを入力してください。
                 </p>
               </div>
 
@@ -572,13 +755,62 @@ function App() {
         setIsPlaying={handlePlayPauseToggle} 
         toggleEq={toggleEQ} 
         currentTrack={currentTrack}
+        trackMetadata={trackMetadata}
         progress={trackProgress}
         duration={trackDuration}
         onSeek={handleSeek}
         formatTime={formatTime}
         playNext={playNextTrack}
         playPrev={playPrevTrack}
+        onPlayerBarClick={() => {
+          if (currentTrack) {
+            setShowFullScreenPlayer(true);
+          } else {
+            alert('音楽を同期して、再生を開始してからクリックしてください');
+          }
+        }}
       />
+
+      {/* アプリ内別画面（AIDJ, EQ, 設定パネル）遷移時に右下に出現する浮遊ホログラムミニプレイヤー */}
+      {isPlaying && currentTrack && (showAIDJ || showEQ || showSettings) && !showFullScreenPlayer && (
+        <div 
+          className="floating-mini-player" 
+          onClick={() => setShowFullScreenPlayer(true)}
+          title="クリックでコックピット画面を展開 [SYS.EXPAND]"
+        >
+          <div className="floating-neon-disk" style={{
+            backgroundImage: (trackMetadata && trackMetadata.coverUrl) ? `url('${trackMetadata.coverUrl}')` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            border: (trackMetadata && trackMetadata.coverUrl) ? '1px solid var(--neon-cyan)' : 'none'
+          }}>
+            {!trackMetadata?.coverUrl && <div className="disk-core-mini"></div>}
+          </div>
+          <div className="floating-info">
+            <span className="floating-badge">[SYS.HOLO.POPUP]</span>
+            <div className="floating-track-name">{trackMetadata ? trackMetadata.title : currentTrack.name}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 大迫力フルスクリーンプレイヤー (表示状態のときのみマウント) */}
+      {showFullScreenPlayer && (
+        <FullScreenPlayer 
+          isPlaying={isPlaying}
+          setIsPlaying={handlePlayPauseToggle}
+          currentTrack={currentTrack}
+          trackMetadata={trackMetadata}
+          progress={trackProgress}
+          duration={trackDuration}
+          onSeek={handleSeek}
+          formatTime={formatTime}
+          playNext={playNextTrack}
+          playPrev={playPrevTrack}
+          analyser={analyserRef.current}
+          onClose={() => setShowFullScreenPlayer(false)}
+          onTogglePiP={togglePiP}
+        />
+      )}
     </div>
   );
 }

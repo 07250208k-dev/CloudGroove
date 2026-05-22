@@ -6,18 +6,21 @@ const Player = ({
   setIsPlaying, 
   toggleEq, 
   currentTrack = null, 
+  trackMetadata = null,
   progress = 0, 
   duration = 0, 
   onSeek, 
   formatTime,
   playNext,
-  playPrev
+  playPrev,
+  onPlayerBarClick
 }) => {
 
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
 
   // 進捗バーのクリックによるシーク処理
   const handleProgressClick = (e) => {
+    e.stopPropagation(); // 親のフルスクリーン起動イベントを遮断
     if (duration === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -28,12 +31,21 @@ const Player = ({
   };
 
   return (
-    <footer className="player-controls">
-      <div className="now-playing-info">
+    <footer 
+      className="player-controls cyber-player-bar" 
+      onClick={() => currentTrack && onPlayerBarClick()}
+      style={{ cursor: currentTrack ? 'pointer' : 'default' }}
+      title={currentTrack ? "クリックでコックピット再生画面を展開 [SYS.EXPAND]" : ""}
+    >
+      <div className="now-playing-info cyber-hover-expand">
         <div 
           className={`album-art ${isPlaying ? 'glow-art' : ''}`} 
           style={{ 
-            backgroundImage: "url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=200&auto=format&fit=crop')",
+            backgroundImage: (trackMetadata && trackMetadata.coverUrl) 
+              ? `url('${trackMetadata.coverUrl}')` 
+              : "url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=200&auto=format&fit=crop')",
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
             animationPlayState: isPlaying ? 'running' : 'paused'
           }}
         ></div>
@@ -44,13 +56,16 @@ const Player = ({
             overflow: 'hidden', 
             textOverflow: 'ellipsis' 
           }}>
-            {currentTrack ? currentTrack.name : '未同期'}
+            {trackMetadata ? trackMetadata.title : (currentTrack ? currentTrack.name : '未同期')}
           </h4>
-          <p>{currentTrack ? 'Google Drive 音源' : 'Google Driveから同期してください'}</p>
+          <p>{trackMetadata ? trackMetadata.artist : (currentTrack ? 'Google Drive 音源' : 'Google Driveから同期してください')}</p>
+          {currentTrack && (
+            <span className="cyber-click-guide">[SYS.HOLO.ACTIVE]</span>
+          )}
         </div>
       </div>
 
-      <div className="controls-center">
+      <div className="controls-center" onClick={(e) => e.stopPropagation()}>
         <div className="main-buttons">
           <button className="control-btn" title="シャッフル (モック)"><Shuffle size={20} /></button>
           <button className="control-btn" onClick={playPrev} disabled={!currentTrack}><SkipBack size={20} /></button>
@@ -74,7 +89,7 @@ const Player = ({
         </div>
       </div>
 
-      <div className="controls-right">
+      <div className="controls-right" onClick={(e) => e.stopPropagation()}>
         <button className="control-btn" onClick={toggleEq} title="Equalizer">
           <SlidersHorizontal size={20} className={isPlaying ? "neon-text-cyan" : ""} />
         </button>
@@ -86,7 +101,6 @@ const Player = ({
           max="100" 
           defaultValue="70" 
           onChange={(e) => {
-            // 音量変更に対応
             const volumeValue = e.target.value / 100;
             const audioEl = document.querySelector('audio');
             if (audioEl) {
