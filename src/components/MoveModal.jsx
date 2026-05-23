@@ -8,7 +8,8 @@ const MoveModal = ({
   folders = [], // すでにApp.jsx側でモード別にフィルタリングされたフォルダ一覧
   secretFolderId,
   isAsmrMode,
-  onMove
+  onMove,
+  addToast
 }) => {
   const [selectedFolderId, setSelectedFolderId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,7 +32,7 @@ const MoveModal = ({
     const targetParentId = selectedFolderId || defaultDest.id;
 
     if (targetParentId === currentParentId) {
-      alert("現在の場所と同じ場所が指定されています。別の移動先を選択してください。");
+      if (addToast) addToast('現在の場所と同じ場所です。別の移動先を選択してください。', 'warn');
       return;
     }
 

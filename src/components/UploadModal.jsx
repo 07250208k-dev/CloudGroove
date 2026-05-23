@@ -6,7 +6,8 @@ const UploadModal = ({
   onClose,
   accessToken,
   selectedFolderId,
-  onUploadSuccess
+  onUploadSuccess,
+  addToast
 }) => {
   const [activeTab, setActiveTab] = useState('file'); // 'file' | 'folder'
   const [logs, setLogs] = useState([]);
@@ -22,6 +23,7 @@ const UploadModal = ({
     coverUrl: '',
     coverBlob: null
   });
+  const originalMetadataRef = useRef(null);
 
   // --- フォルダ用ステート ---
   const [folderName, setFolderName] = useState('');
@@ -56,13 +58,15 @@ const UploadModal = ({
 
     setSingleFile(file);
     const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
-    setMetadata({
+    const defaultMeta = {
       title: cleanTitle,
       artist: 'Google Drive 音源',
       album: 'マイドライブ',
       coverUrl: '',
       coverBlob: null
-    });
+    };
+    setMetadata(defaultMeta);
+    originalMetadataRef.current = defaultMeta;
 
     addLog(`FILE REGISTERED: ${file.name}`, 'sys');
     addLog('SCANNING ID3 METADATA...', 'sys');
@@ -85,13 +89,15 @@ const UploadModal = ({
             coverUrl = URL.createObjectURL(coverBlob);
           }
 
-          setMetadata({
+          const parsedMeta = {
             title: tags.title || cleanTitle,
             artist: tags.artist || 'Google Drive 音源',
             album: tags.album || 'マイドライブ',
             coverUrl: coverUrl,
             coverBlob: coverBlob
-          });
+          };
+          setMetadata(parsedMeta);
+          originalMetadataRef.current = parsedMeta;
           addLog('ID3 METADATA PARSED SUCCESSFULLY', 'ok');
         },
         onError: (error) => {
@@ -139,7 +145,7 @@ const UploadModal = ({
 
     if (audioFiles.length === 0) {
       addLog('NO AUDIO FILES FOUND IN THE SELECTED DIRECTORY.', 'error');
-      alert('選択したフォルダ内には、対応する音声ファイル（MP3, WAV, M4A等）が見つかりませんでした。');
+      if (addToast) addToast('選択したフォルダ内に対応する音声ファイルが見つかりませんでした。', 'warn');
       return;
     }
 
@@ -203,7 +209,7 @@ const UploadModal = ({
   // シングルファイルアップロード実行
   const handleSingleUpload = async () => {
     if (!singleFile) {
-      alert('音声ファイルを選択してください。');
+      if (addToast) addToast('音声ファイルを選択してください。', 'warn');
       return;
     }
 
@@ -215,8 +221,15 @@ const UploadModal = ({
     try {
       let finalBlob = singleFile;
 
+      // メタデータが変更されたかチェック
+      const isModified = !originalMetadataRef.current ||
+        metadata.title !== originalMetadataRef.current.title ||
+        metadata.artist !== originalMetadataRef.current.artist ||
+        metadata.album !== originalMetadataRef.current.album ||
+        metadata.coverBlob !== originalMetadataRef.current.coverBlob;
+
       // ID3タグ書き込み
-      if (window.ID3Writer) {
+      if (isModified && window.ID3Writer) {
         addLog('COMPILING METADATA INTO AUDIO BINARY...', 'sys');
         setProgress(30);
 
@@ -242,7 +255,11 @@ const UploadModal = ({
         finalBlob = writer.getBlob();
         addLog('ID3 COMPILATION COMPLETE [OK]', 'ok');
       } else {
-        addLog('browser-id3-writer NOT DETECTED. SKIPPING LOCAL METADATA WRITING.', 'warn');
+        if (!isModified) {
+          addLog('NO METADATA CHANGES DETECTED. UPLOADING ORIGINAL FILE AS-IS TO PRESERVE ALL ORIGINAL TAGS.', 'ok');
+        } else {
+          addLog('browser-id3-writer NOT DETECTED. SKIPPING LOCAL METADATA WRITING.', 'warn');
+        }
       }
 
       setProgress(60);
@@ -295,10 +312,28 @@ const UploadModal = ({
     return data.id;
   };
 
+  // 個々のファイルのタグ情報を読み取る非同期ヘルパー
+  const readTags = (file) => {
+    return new Promise((resolve) => {
+      if (!window.jsmediatags) {
+        resolve(null);
+        return;
+      }
+      window.jsmediatags.read(file, {
+        onSuccess: (tag) => {
+          resolve(tag.tags);
+        },
+        onError: () => {
+          resolve(null);
+        }
+      });
+    });
+  };
+
   // フォルダアップロード実行
   const handleFolderUpload = async () => {
     if (folderFiles.length === 0) {
-      alert('フォルダを選択し、音声ファイルが含まれていることを確認してください。');
+      if (addToast) addToast('フォルダを選択し、音声ファイルが含まれていることを確認してください。', 'warn');
       return;
     }
 
@@ -316,6 +351,9 @@ const UploadModal = ({
       
       let successCount = 0;
 
+      // 一括メタデータが指定されているかチェック
+      const hasBatchMetadata = !!(folderMetadata.artist || folderMetadata.album || folderMetadata.coverBlob);
+
       // 2. フォルダ内の全音声ファイルをループで順次アップロード
       for (let i = 0; i < folderFiles.length; i++) {
         const file = folderFiles[i];
@@ -323,24 +361,43 @@ const UploadModal = ({
 
         let finalBlob = file;
 
-        // ID3タグの書き込み（一括設定されたメタデータを注入、タイトルは個別のファイル名）
-        if (window.ID3Writer) {
+        // ID3タグの書き込み（一括設定されたメタデータがある場合のみ実行）
+        if (window.ID3Writer && hasBatchMetadata) {
           try {
+            addLog(`READING ORIGINAL TAGS FOR "${file.name}"...`, 'sys');
+            const originalTags = await readTags(file);
+            
             const arrayBuffer = await file.arrayBuffer();
             const writer = new window.ID3Writer(arrayBuffer);
 
-            // タイトルはファイル名から拡張子を除いたものを設定（同じタイトルはきもいので）
+            // タイトルは元ファイルのタグを優先、なければファイル名から拡張子を除いたもの
             const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
-            writer.setFrame('TIT2', cleanTitle);
+            const title = (originalTags && originalTags.title) ? originalTags.title : cleanTitle;
+            writer.setFrame('TIT2', title);
 
-            if (folderMetadata.artist) {
-              writer.setFrame('TPE1', [folderMetadata.artist]);
-            }
-            if (folderMetadata.album) {
-              writer.setFrame('TALB', folderMetadata.album);
-            }
+            // アーティスト: 一括設定があれば優先、なければ元ファイルのタグ、それもなければデフォルト値
+            const artist = folderMetadata.artist || (originalTags && originalTags.artist) || 'Google Drive 音源';
+            writer.setFrame('TPE1', [artist]);
+
+            // アルバム: 一括設定があれば優先、なければ元ファイルのタグ、それもなければデフォルト値
+            const album = folderMetadata.album || (originalTags && originalTags.album) || 'マイドライブ';
+            writer.setFrame('TALB', album);
+
+            // カバー画像: 一括設定があれば優先、なければ元ファイルのカバー画像
+            let coverArrayBuffer = null;
             if (folderMetadata.coverBlob) {
-              const coverArrayBuffer = await folderMetadata.coverBlob.arrayBuffer();
+              coverArrayBuffer = await folderMetadata.coverBlob.arrayBuffer();
+            } else if (originalTags && originalTags.picture) {
+              const { data } = originalTags.picture;
+              const len = data.length;
+              const bytes = new Uint8Array(len);
+              for (let j = 0; j < len; j++) {
+                bytes[j] = data[j];
+              }
+              coverArrayBuffer = bytes.buffer;
+            }
+
+            if (coverArrayBuffer) {
               writer.setFrame('APIC', {
                 type: 3,
                 data: coverArrayBuffer,
@@ -355,6 +412,12 @@ const UploadModal = ({
           } catch (err) {
             addLog(`ID3 TAG WRITING ERROR ON "${file.name}": ${err.message}. UPLOADING ORIGINAL.`, 'warn');
             finalBlob = file;
+          }
+        } else {
+          if (!hasBatchMetadata) {
+            addLog(`NO BATCH METADATA SPECIFIED. UPLOADING ORIGINAL FILE AS-IS TO PRESERVE ALL ORIGINAL TAGS.`, 'sys');
+          } else {
+            addLog(`browser-id3-writer NOT DETECTED. SKIPPING BATCH METADATA WRITING.`, 'warn');
           }
         }
 

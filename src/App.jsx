@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3, Moon, Folder } from 'lucide-react';
+import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3, Moon, Folder, ListPlus } from 'lucide-react';
 import DriveLibrary from './components/DriveLibrary';
 import SpectrumVisualizer from './components/SpectrumVisualizer';
 import Player from './components/Player';
@@ -9,6 +9,7 @@ import FullScreenPlayer from './components/FullScreenPlayer';
 import UploadModal from './components/UploadModal';
 import TagEditModal from './components/TagEditModal';
 import MoveModal from './components/MoveModal';
+import CyberToast from './components/CyberToast';
 
 function App() {
   const [renderError, setRenderError] = useState(null);
@@ -62,6 +63,38 @@ function App() {
   const [rainVolume, setRainVolume] = useState(0);
   const [secretFolderId, setSecretFolderId] = useState(localStorage.getItem('cg_secret_folder_id') || '');
   const [movingAsset, setMovingAsset] = useState(null);
+
+  // --- Toast Notification System ---
+  const [toasts, setToasts] = useState([]);
+  const toastIdRef = useRef(0);
+
+  const addToast = useCallback((message, type = 'info') => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [{ id, message, type }, ...prev]);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // --- Play Queue ---
+  const [playQueue, setPlayQueue] = useState([]);
+
+  const addToQueue = useCallback((track) => {
+    setPlayQueue(prev => {
+      if (prev.some(t => t.id === track.id)) return prev;
+      return [...prev, track];
+    });
+    addToast(`キューに追加: "${track.name.replace(/\.[^/.]+$/, '')}"`, 'info');
+  }, [addToast]);
+
+  const removeFromQueue = useCallback((index) => {
+    setPlayQueue(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const clearQueue = useCallback(() => {
+    setPlayQueue([]);
+  }, []);
 
   // Google Drive & Auth States
   const [clientId, setClientId] = useState(localStorage.getItem('cg_client_id') || '210521239989-t2bvp162ed8mntukhjndrg3b5tgc2fmq.apps.googleusercontent.com');
@@ -262,9 +295,9 @@ function App() {
       
       // 選曲完了をオシャレなSFダイアログで通知
       const songListText = playlistTracks.map((t, idx) => `${idx + 1}. ${t.name.substring(0, 40)}`).join('\n');
-      alert(`🤖 [SYS.AI.DJ]: ドライブ内の全音声ファイルを解析完了。\n\n「${promptText}」に合致する音響メタデータを検出しました。\n以下の ${playlistTracks.length} 曲を自動選曲し、プレイリストに同期展開します：\n\n${songListText}`);
+      addToast(`🤖 AI.DJ: 「${promptText}」に合致する ${playlistTracks.length} 曲を自動選曲しました。`, 'sys');
     } else if (type === 'ai' && tracks.length === 0) {
-      alert(`🤖 [SYS.AI.DJ]: ドライブ内の音声ファイルが同期されていません。\n先にGoogle Driveと「同期」し、曲を読み込んでから実行してください。 (空のプレイリストを作成します)`);
+      addToast('ドライブ内の音声ファイルが同期されていません。先にGoogle Driveと同期してください。', 'warn');
     }
     
     const newPl = {
@@ -288,7 +321,7 @@ function App() {
     const updated = playlists.map(p => {
       if (p.id === playlistId) {
         if (p.tracks.some(t => t.id === track.id)) {
-          alert('この曲はすでにプレイリストに登録されています。');
+          addToast('この曲はすでにプレイリストに登録されています。', 'warn');
           return p;
         }
         return { ...p, tracks: [...p.tracks, track] };
@@ -326,7 +359,7 @@ function App() {
           scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile',
           callback: async (response) => {
             if (response.error) {
-              alert('認証エラー: ' + response.error);
+              addToast('認証エラー: ' + response.error, 'error');
               return;
             }
             if (response.access_token) {
@@ -566,14 +599,14 @@ function App() {
       
       if (!res.ok) throw new Error('移動リクエストに失敗しました');
       
-      alert(`${isFolder ? 'フォルダ' : 'ファイル'}を移動しました。`);
+      addToast(`${isFolder ? 'フォルダ' : 'ファイル'}を移動しました。`, 'success');
       
       // 移動後の再同期
       fetchDriveFolders(accessToken);
       fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
       scanAudioFolders(accessToken);
     } catch (err) {
-      alert(`移動エラー: ${err.message}`);
+      addToast(`移動エラー: ${err.message}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -599,7 +632,7 @@ function App() {
       document.body.removeChild(a);
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
-      alert(`ダウンロードエラー: ${err.message}`);
+      addToast(`ダウンロードエラー: ${err.message}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -633,7 +666,7 @@ function App() {
 
       if (filesToDownload.length === 0) {
         addDlLog(`NO DOWNLOADABLE AUDIO FILES DETECTED IN THIS DIRECTORY.`, 'error');
-        alert('このフォルダ内に対応する音声ファイル（MP3, WAV, M4A等）が見つかりませんでした。');
+        addToast('このフォルダ内に対応する音声ファイルが見つかりませんでした。', 'warn');
         setIsDownloadingFolder(false);
         return;
       }
@@ -728,12 +761,12 @@ function App() {
         setIsPlaying(false);
       }
 
-      alert('ファイルを削除しました。');
+      addToast('ファイルを削除しました。', 'success');
       // リスト更新
       fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
       scanAudioFolders(accessToken);
     } catch (err) {
-      alert(`削除エラー: ${err.message}`);
+      addToast(`削除エラー: ${err.message}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -751,13 +784,13 @@ function App() {
       });
       if (!res.ok) throw new Error('API delete request failed');
       
-      alert('フォルダを削除しました。');
+      addToast('フォルダを削除しました。', 'success');
       setSelectedFolderId(null);
       fetchDriveFiles(accessToken, null);
       fetchDriveFolders(accessToken);
       scanAudioFolders(accessToken);
     } catch (err) {
-      alert(`削除エラー: ${err.message}`);
+      addToast(`削除エラー: ${err.message}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -781,10 +814,10 @@ function App() {
       });
       if (!res.ok) throw new Error('フォルダ名の変更に失敗しました');
       
-      alert('フォルダ名を変更しました。');
+      addToast('フォルダ名を変更しました。', 'success');
       fetchDriveFolders(accessToken);
     } catch (err) {
-      alert(`エラー: ${err.message}`);
+      addToast(`エラー: ${err.message}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -799,14 +832,14 @@ function App() {
     if (minutes === 0) {
       setSleepTimer(null);
       setSleepTimeRemaining(0);
-      alert('🤖 [SYS.TIMER]: 睡眠タイマーを解除しました。');
+      addToast('🤖 睡眠タイマーを解除しました。', 'sys');
       return;
     }
 
     const totalSeconds = minutes * 60;
     setSleepTimeRemaining(totalSeconds);
     
-    alert(`🤖 [SYS.TIMER]: 睡眠タイマーを ${minutes} 分にセットしました。\n終了の5分前から音量を徐々にフェードアウトします。`);
+    addToast(`🤖 睡眠タイマーを ${minutes} 分にセット。\n終了5分前から自動フェードアウトします。`, 'sys');
 
     const interval = setInterval(() => {
       setSleepTimeRemaining(prev => {
@@ -818,7 +851,7 @@ function App() {
             audioRef.current.volume = 1.0; 
           }
           setIsPlaying(false);
-          alert('💤 [SYS.SLUMBER]: 規定の睡眠サイクルに達しました。システムをスタンバイ状態へ移行します。');
+          addToast('💤 睡眠サイクル完了。スタンバイ状態へ移行します。', 'sys');
           return 0;
         }
 
@@ -857,9 +890,9 @@ function App() {
     const nextState = !isAsmrMode;
     setIsAsmrMode(nextState);
     if (nextState) {
-      alert('🔮 [SYS.ZEN]: 安息メディテーションモードへ移行。\n心拍と同調するルナウェーブと穏やかな雨音が、あなたの意識を夢幻の彼方へ誘います。');
+      addToast('🔮 安息メディテーションモードへ移行。\nルナウェーブと雨音が意識を夢幻の彼方へ誘います。', 'sys');
     } else {
-      alert('⚡ [SYS.CYBER]: 通常のサイバーパンクコックピットへ帰還。\nシステム出力を最大化します。');
+      addToast('⚡ サイバーパンクコックピットへ帰還。出力最大化。', 'sys');
       // 雨音を停止
       handleRainVolumeChange(0);
       // スリープタイマーも解除
@@ -870,7 +903,7 @@ function App() {
   // ログイン
   const handleLogin = () => {
     if (!clientId) {
-      alert('先に設定パネルから「Google クライアント ID」を設定してください。');
+      addToast('先に設定パネルから「Google クライアント ID」を設定してください。', 'warn');
       setShowSettings(true);
       return;
     }
@@ -914,10 +947,24 @@ function App() {
     localStorage.removeItem('cg_user_profile');
   };
 
+  // Driveの状態を更新する (再同期)
+  const handleRefreshDrive = async () => {
+    if (!accessToken) return;
+    try {
+      await Promise.all([
+        fetchDriveFolders(accessToken),
+        fetchDriveFiles(accessToken, selectedFolderId, searchQuery),
+        scanAudioFolders(accessToken)
+      ]);
+    } catch (e) {
+      console.error("Failed to refresh Drive state:", e);
+    }
+  };
+
   const handleSaveSettings = (newId) => {
     setClientId(newId);
     localStorage.setItem('cg_client_id', newId);
-    alert('クライアントIDを保存しました。');
+    addToast('クライアントIDを保存しました。', 'success');
     setShowSettings(false);
   };
 
@@ -1064,7 +1111,7 @@ function App() {
         }
       }
     } catch (err) {
-      alert('曲のロード中にエラーが発生しました: ' + err.message);
+      addToast('曲のロード中にエラーが発生しました: ' + err.message, 'error');
       setIsPlaying(false);
     } finally {
       setIsLoading(false);
@@ -1081,7 +1128,7 @@ function App() {
 
     try {
       if (!window.documentPictureInPicture) {
-        alert('このブラウザは文書Picture-in-Picture APIをサポートしていません。最新のChrome/Edgeをご使用ください。');
+        addToast('このブラウザは文書PiP APIをサポートしていません。最新Chrome/Edgeを使用してください。', 'warn');
         return;
       }
 
@@ -1126,7 +1173,7 @@ function App() {
       setPipWindow(w);
     } catch (err) {
       console.error('Failed to open Document PiP:', err);
-      alert('文書PiPの起動に失敗しました。');
+      addToast('文書PiPの起動に失敗しました。', 'error');
     }
   };
 
@@ -1192,6 +1239,14 @@ function App() {
   };
 
   const playNextTrack = () => {
+    // キューに曲がある場合はキューから再生
+    if (playQueue.length > 0) {
+      const nextTrack = playQueue[0];
+      setPlayQueue(prev => prev.slice(1));
+      playTrack(nextTrack);
+      return;
+    }
+
     if (displayTracks.length === 0 || !currentTrack) return;
     
     if (repeatMode === 'one') {
@@ -1276,6 +1331,76 @@ function App() {
     const secs = Math.floor(time % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
+
+  // --- キーボードショートカット ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // input/textarea にフォーカス中は無効化
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          handlePlayPauseToggle();
+          break;
+        case 'ArrowLeft':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            playPrevTrack();
+          } else if (audioRef.current) {
+            e.preventDefault();
+            handleSeek(Math.max(0, audioRef.current.currentTime - 5));
+          }
+          break;
+        case 'ArrowRight':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            playNextTrack();
+          } else if (audioRef.current) {
+            e.preventDefault();
+            handleSeek(Math.min(trackDuration, audioRef.current.currentTime + 5));
+          }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          if (audioRef.current) {
+            audioRef.current.volume = Math.min(1, audioRef.current.volume + 0.05);
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (audioRef.current) {
+            audioRef.current.volume = Math.max(0, audioRef.current.volume - 0.05);
+          }
+          break;
+        case 's':
+        case 'S':
+          setIsShuffle(prev => !prev);
+          break;
+        case 'r':
+        case 'R':
+          setRepeatMode(prev => prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none');
+          break;
+        case 'f':
+        case 'F':
+          if (currentTrack) setShowFullScreenPlayer(prev => !prev);
+          break;
+        case 'Escape':
+          if (showFullScreenPlayer) setShowFullScreenPlayer(false);
+          else if (showAIDJ) setShowAIDJ(false);
+          else if (showEQ) setShowEQ(false);
+          else if (showSettings) setShowSettings(false);
+          else if (showAsmrPanel) setShowAsmrPanel(false);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, currentTrack, trackDuration, showFullScreenPlayer, showAIDJ, showEQ, showSettings, showAsmrPanel]);
 
   const getByteSizeText = (bytes) => {
     if (!bytes) return '不明';
@@ -1433,6 +1558,8 @@ function App() {
         onFolderRename={(folderId, oldName) => renameFolder(folderId, oldName)}
         onFolderMoveClick={(folderId, folderName, parents) => setMovingAsset({ id: folderId, name: folderName, parents: parents, isFolder: true })}
         isAsmrMode={isAsmrMode}
+        onRefresh={handleRefreshDrive}
+        addToast={addToast}
       />
       <main className="main-content">
         <header className="top-bar">
@@ -1605,6 +1732,25 @@ function App() {
                       <td>{new Date(track.createdTime).toLocaleDateString()}</td>
                       <td className="track-actions-cell" onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button 
+                            className="track-action-btn add-btn"
+                            title="次に再生（キューに追加）"
+                            onClick={() => addToQueue(track)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--neon-purple)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: 0.6,
+                              transition: 'opacity 0.2s, transform 0.2s'
+                            }}
+                          >
+                            <ListPlus size={16} />
+                          </button>
                           <button 
                             className="track-action-btn add-btn"
                             title="プレイリストに追加"
@@ -1987,7 +2133,7 @@ function App() {
           if (currentTrack) {
             setShowFullScreenPlayer(true);
           } else {
-            alert('音楽を同期して、再生を開始してからクリックしてください');
+            addToast('音楽を同期して、再生を開始してからクリックしてください', 'info');
           }
         }}
       />
@@ -2080,6 +2226,7 @@ function App() {
           fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
           scanAudioFolders(accessToken);
         }}
+        addToast={addToast}
       />
 
       {/* タグ再編集モーダル */}
@@ -2112,6 +2259,7 @@ function App() {
         secretFolderId={secretFolderId}
         isAsmrMode={isAsmrMode}
         onMove={moveAsset}
+        addToast={addToast}
       />
 
       {/* フォルダZIPダウンロード進捗モーダル */}
@@ -2175,6 +2323,8 @@ function App() {
         />,
         pipWindow.document.body
       )}
+      {/* サイバーパンク・トースト通知 */}
+      <CyberToast toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }

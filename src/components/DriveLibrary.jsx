@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, Folder, Lock, ListMusic, Zap, Coffee, Plus, Sparkles, FolderOpen, Trash2, X, Upload, Download, Edit3 } from 'lucide-react';
+import { HardDrive, Folder, Lock, ListMusic, Zap, Coffee, Plus, Sparkles, FolderOpen, Trash2, X, Upload, Download, Edit3, RefreshCw } from 'lucide-react';
 
 const DriveLibrary = ({ 
   tracks = [], 
@@ -19,9 +19,23 @@ const DriveLibrary = ({
   onFolderDelete,
   onFolderRename,
   onFolderMoveClick,
-  isAsmrMode = false
+  isAsmrMode = false,
+  onRefresh,
+  addToast
 }) => {
   const [showSecret, setShowSecret] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefreshClick = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    if (onRefresh) {
+      await onRefresh();
+    }
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 800);
+  };
 
 
 
@@ -54,25 +68,53 @@ const DriveLibrary = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h2><HardDrive size={16} /> G-Drive (フォルダ)</h2>
           {isSyncActive && (
-            <button
-              onClick={onUploadClick}
-              title="音声/フォルダを同期アップロード"
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--neon-cyan)',
-                color: 'var(--neon-cyan)',
-                borderRadius: '4px',
-                width: '24px',
-                height: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 0 5px rgba(0, 243, 255, 0.2)'
-              }}
-            >
-              <Upload size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={handleRefreshClick}
+                title="Driveの状態を更新 (再読み込み)"
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--neon-cyan)',
+                  color: 'var(--neon-cyan)',
+                  borderRadius: '4px',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 0 5px rgba(0, 243, 255, 0.2)',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                <RefreshCw 
+                  size={13} 
+                  style={{
+                    animation: isRefreshing ? 'spin 1s infinite linear' : 'none',
+                    transition: 'transform 0.3s ease'
+                  }} 
+                />
+              </button>
+              <button
+                onClick={onUploadClick}
+                title="音声/フォルダを同期アップロード"
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--neon-cyan)',
+                  color: 'var(--neon-cyan)',
+                  borderRadius: '4px',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 0 5px rgba(0, 243, 255, 0.2)'
+                }}
+              >
+                <Upload size={14} />
+              </button>
+            </div>
           )}
         </div>
         <ul className="folder-tree" style={{ maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
@@ -225,7 +267,7 @@ const DriveLibrary = ({
           {!isSyncActive && isAsmrMode && (
             <li 
               className="folder secret-folder"
-              onClick={() => alert("🤖 [SYS.INFO]: 精神防壁（隠しASMRアーカイブ）がアンロックされました。\n\n※このフォルダは現在【オフライン(ダミー)】表示です。右上の「同期」ボタンからGoogle Driveに接続すると、クラウド上の実体隠しフォルダ `.cg_secret_asmr` と同期され、音声ファイルのアップロードやタグ編集が有効化されます。")}
+              onClick={() => addToast && addToast('精神防壁がアンロックされました。\n右上の「同期」からGoogle Driveに接続すると、隠しASMRフォルダが有効化されます。', 'sys')}
               style={{ border: '1px dashed var(--neon-asmr-purple, #8c00ff)' }}
             >
               <Lock size={16} className="neon-text-pink" style={{ color: 'var(--neon-asmr-purple, #8c00ff)' }} />

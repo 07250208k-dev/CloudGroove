@@ -1612,4 +1612,14 @@ body.pip-body {
   background: rgba(0, 255, 204, 0.03) !important;
 }
 
-
+/* ==========================================================================
+   🔔 Cyber Toast Notification System
+   ========================================================================== */
+@keyframes toast-slide-in {
+  from { transform: translateX(120%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes toast-fade-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(60%); }
+}
