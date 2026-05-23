@@ -556,7 +556,7 @@ const SpectrumVisualizer = ({
       window.removeEventListener('resize', resizeCanvas);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [isPlaying, analyser, isAsmrMode]);
+  }, [isPlaying, analyser, isAsmrMode, visualizerMode]);
 
   return (
     <div className="spectrum-container">

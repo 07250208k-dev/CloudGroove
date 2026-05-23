@@ -655,7 +655,7 @@ const FullScreenPlayer = ({
       window.removeEventListener('resize', resizeCanvas);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [isPlaying, analyser, isAsmrMode]);
+  }, [isPlaying, analyser, isAsmrMode, visualizerMode]);
 
   return (
     <div className={`fullscreen-overlay ${isAsmrMode ? 'asmr-theme' : ''}`}>
