@@ -1,9 +1,86 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { HardDrive } from 'lucide-react';
 
-const SpectrumVisualizer = ({ isPlaying, analyser = null, isAsmrMode = false, trackMetadata = null }) => {
+const initGrid = (width, height, baseRadius) => {
+  const nodes = [];
+  const links = [];
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  // 1. Core Node (Center)
+  nodes.push({
+    id: 'core',
+    x: centerX,
+    y: centerY,
+    type: 'core',
+    size: 18,
+    pulse: 1,
+    intrusion: 0,
+    breached: false,
+    label: 'CORE_SECTOR'
+  });
+
+  // 2. Firewall Nodes (Intermediate)
+  const fwCount = 4;
+  for (let i = 0; i < fwCount; i++) {
+    const angle = (i * Math.PI * 2) / fwCount + Math.PI / 4;
+    const dist = baseRadius * 1.5;
+    const id = `fw_${i}`;
+    nodes.push({
+      id,
+      x: centerX + Math.cos(angle) * dist,
+      y: centerY + Math.sin(angle) * dist,
+      type: 'firewall',
+      size: 10,
+      pulse: 1,
+      intrusion: 0,
+      breached: false,
+      label: `FW_GATE_0${i}`
+    });
+    links.push({ source: 'core', target: id, breached: false });
+  }
+
+  // 3. Sub-nodes (Peripheral)
+  const subNodeCount = 12;
+  for (let i = 0; i < subNodeCount; i++) {
+    const angle = (i * Math.PI * 2) / subNodeCount;
+    const fwIdx = Math.floor((i / subNodeCount) * fwCount);
+    const parentId = `fw_${fwIdx}`;
+    const dist = baseRadius * (2.2 + Math.random() * 0.3);
+    const id = `sub_${i}`;
+    nodes.push({
+      id,
+      x: centerX + Math.cos(angle) * dist,
+      y: centerY + Math.sin(angle) * dist,
+      type: 'node',
+      size: 5,
+      pulse: 1,
+      intrusion: 0,
+      breached: false,
+      label: `DB_CHUNK_${i.toString(16).toUpperCase()}`
+    });
+    links.push({ source: parentId, target: id, breached: false });
+  }
+
+  return { nodes, links, initialized: true };
+};
+
+const SpectrumVisualizer = ({ 
+  isPlaying, 
+  analyser = null, 
+  isAsmrMode = false, 
+  trackMetadata = null,
+  visualizerMode = 'hacker_grid',
+  setVisualizerMode
+}) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
+  
+  // Persistent refs for the Cyber Grid visualizer to maintain states between animation frames
+  const gridRef = useRef({ nodes: [], links: [], initialized: false, width: 0, height: 0 });
+  const packetsRef = useRef([]);
+  const ringsRef = useRef([]);
+  const logsRef = useRef([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -150,6 +227,282 @@ const SpectrumVisualizer = ({ isPlaying, analyser = null, isAsmrMode = false, tr
           ctx.arc(pX, pY, 1.8, 0, Math.PI * 2);
           ctx.fill();
         }
+
+      } else if (visualizerMode === 'hacker_grid') {
+        // ⚡ 近未来サイバー・グリッドハッキングシミュレータ
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const baseRadius = Math.min(canvas.width, canvas.height) * 0.20;
+
+        // 初期化または画面リサイズ時に再計算
+        if (!gridRef.current.initialized || gridRef.current.width !== canvas.width || gridRef.current.height !== canvas.height) {
+          gridRef.current = initGrid(canvas.width, canvas.height, baseRadius);
+          gridRef.current.width = canvas.width;
+          gridRef.current.height = canvas.height;
+        }
+
+        const { nodes, links } = gridRef.current;
+        const packets = packetsRef.current;
+        const rings = ringsRef.current;
+        const logs = logsRef.current;
+
+        // 周波数解析
+        let bassVal = 0;
+        let midVal = 0;
+        let trebleVal = 0;
+
+        if (analyser && isPlaying) {
+          for (let i = 0; i < 6; i++) bassVal += drawData[i];
+          bassVal /= 6;
+
+          for (let i = 6; i < 30; i++) midVal += drawData[i];
+          midVal /= 24;
+
+          for (let i = 30; i < bars; i++) trebleVal += drawData[i];
+          trebleVal /= 34;
+        } else if (isPlaying) {
+          bassVal = 100 + Math.random() * 80;
+          midVal = 80 + Math.random() * 60;
+          trebleVal = 50 + Math.random() * 40;
+        }
+
+        // 低音（キック）連動でデータパケット射出
+        if (isPlaying && bassVal > 155 && Math.random() < 0.16) {
+          const link = links[Math.floor(Math.random() * links.length)];
+          const sourceNode = nodes.find(n => n.id === link.source);
+          const targetNode = nodes.find(n => n.id === link.target);
+
+          if (sourceNode && targetNode) {
+            packets.push({
+              sourceId: link.source,
+              targetId: link.target,
+              x: sourceNode.x,
+              y: sourceNode.y,
+              progress: 0,
+              speed: 0.03 + (bassVal / 255) * 0.025,
+              color: Math.random() > 0.5 ? secondaryColor : primaryColor
+            });
+          }
+        }
+
+        // 高音（ハイハット）連動でショート電光ショート
+        let drawLightning = false;
+        let lSource, lTarget;
+        if (isPlaying && trebleVal > 130 && Math.random() < 0.08) {
+          const subNodes = nodes.filter(n => n.type === 'node');
+          if (subNodes.length >= 2) {
+            lSource = subNodes[Math.floor(Math.random() * subNodes.length)];
+            lTarget = subNodes[Math.floor(Math.random() * subNodes.length)];
+            if (lSource.id !== lTarget.id) {
+              drawLightning = true;
+            }
+          }
+        }
+
+        // ログ情報（BPM同期風）
+        if (isPlaying && Math.random() < 0.04) {
+          const addresses = ["0x0F8B", "0xFF30", "0x5E8A", "0x9D0C", "0x7A4C", "0xCC5D", "0xE25F", "0xF58B"];
+          const logsList = [
+            "OVERWRITE_KERNEL: OK",
+            "SCANNING MODULE 0x4F...",
+            "BYPASSING PORT 8080...",
+            "BUFFER OVERFLOW DIRECTED",
+            "ESTABLISHING SYNC BEAT...",
+            "INTRUSION AT SUB-GRID",
+            "OVERCLOCKING CPU_SEC...",
+            "OVERRIDING AUDIO DECK"
+          ];
+          const addr = addresses[Math.floor(Math.random() * addresses.length)];
+          const text = logsList[Math.floor(Math.random() * logsList.length)];
+          logs.push({
+            text: `[${addr}] ${text}`,
+            color: Math.random() > 0.6 ? secondaryColor : primaryColor,
+            y: canvas.height - 15,
+            alpha: 1.0,
+            speed: 1.0 + Math.random() * 0.6
+          });
+        }
+
+        // 1. リンク（接続線）の描画
+        ctx.lineWidth = 1;
+        links.forEach(l => {
+          const sNode = nodes.find(n => n.id === l.source);
+          const tNode = nodes.find(n => n.id === l.target);
+          if (sNode && tNode) {
+            const baseAlpha = 0.05;
+            const glowAlpha = (midVal / 255) * 0.12;
+            ctx.strokeStyle = sNode.breached && tNode.breached 
+              ? 'rgba(0, 255, 0, 0.22)' 
+              : `rgba(${cyanParts[0]}, ${cyanParts[1]}, ${cyanParts[2]}, ${baseAlpha + glowAlpha})`;
+            ctx.beginPath();
+            ctx.moveTo(sNode.x, sNode.y);
+            ctx.lineTo(tNode.x, tNode.y);
+            ctx.stroke();
+          }
+        });
+
+        // 2. パケット（電送信号ドット）の更新・描画
+        for (let i = packets.length - 1; i >= 0; i--) {
+          const p = packets[i];
+          const sNode = nodes.find(n => n.id === p.sourceId);
+          const tNode = nodes.find(n => n.id === p.targetId);
+
+          if (!sNode || !tNode) {
+            packets.splice(i, 1);
+            continue;
+          }
+
+          p.progress += p.speed;
+          p.x = sNode.x + (tNode.x - sNode.x) * p.progress;
+          p.y = sNode.y + (tNode.y - sNode.y) * p.progress;
+
+          if (p.progress >= 1) {
+            packets.splice(i, 1);
+            if (!tNode.breached) {
+              tNode.intrusion = Math.min(100, tNode.intrusion + Math.floor(Math.random() * 15) + 12);
+              if (tNode.intrusion === 100) {
+                tNode.breached = true;
+                rings.push({
+                  x: tNode.x,
+                  y: tNode.y,
+                  radius: 4,
+                  maxRadius: 35,
+                  alpha: 1.0,
+                  color: '#00ff00'
+                });
+                logs.push({
+                  text: `🤖 [BREACHED]: ${tNode.label} ACCESSED!`,
+                  color: '#00ff00',
+                  y: canvas.height - 15,
+                  alpha: 1.0,
+                  speed: 1.5
+                });
+              }
+            }
+            continue;
+          }
+
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+
+        // 3. ショート雷撃の描画
+        if (drawLightning && lSource && lTarget) {
+          ctx.strokeStyle = `rgba(${pinkParts[0]}, ${pinkParts[1]}, ${pinkParts[2]}, 0.85)`;
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = secondaryColor;
+          ctx.beginPath();
+          ctx.moveTo(lSource.x, lSource.y);
+          const midX = (lSource.x + lTarget.x) / 2 + (Math.random() - 0.5) * 30;
+          const midY = (lSource.y + lTarget.y) / 2 + (Math.random() - 0.5) * 30;
+          ctx.lineTo(midX, midY);
+          ctx.lineTo(lTarget.x, lTarget.y);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+
+        // 4. 攻略ノード波紋リングの更新・描画
+        for (let i = rings.length - 1; i >= 0; i--) {
+          const r = rings[i];
+          r.radius += 1.5;
+          r.alpha -= 0.04;
+
+          if (r.alpha <= 0) {
+            rings.splice(i, 1);
+            continue;
+          }
+
+          ctx.strokeStyle = r.color;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = r.alpha;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = r.color;
+          ctx.beginPath();
+          ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+        ctx.globalAlpha = 1.0;
+
+        // 5. ノード（コアと端末）の描画
+        nodes.forEach(n => {
+          if (n.type === 'core') {
+            n.pulse = 1 + (bassVal / 255) * 0.15;
+          } else if (n.type === 'firewall') {
+            n.pulse = 1 + (midVal / 255) * 0.10 * Math.sin(Date.now() * 0.005 + n.x);
+          } else {
+            n.pulse = 1 + (trebleVal / 255) * 0.08 * Math.cos(Date.now() * 0.005 + n.y);
+          }
+
+          const rSize = n.size * n.pulse;
+
+          let nColor = primaryColor;
+          let glowGlow = 0;
+          if (n.breached) {
+            nColor = '#00ff00';
+            glowGlow = 15;
+          } else if (n.intrusion > 0) {
+            const factor = n.intrusion / 100;
+            const r = Math.floor(cyanParts[0] + (pinkParts[0] - cyanParts[0]) * factor);
+            const g = Math.floor(cyanParts[1] + (pinkParts[1] - cyanParts[1]) * factor);
+            const b = Math.floor(cyanParts[2] + (pinkParts[2] - cyanParts[2]) * factor);
+            nColor = `rgb(${r},${g},${b})`;
+            glowGlow = 8 + factor * 6;
+          } else {
+            glowGlow = n.type === 'core' ? 20 : 6;
+          }
+
+          ctx.save();
+          ctx.shadowColor = nColor;
+          ctx.shadowBlur = glowGlow;
+          ctx.fillStyle = nColor;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, rSize, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          if (n.type === 'core' || n.type === 'firewall') {
+            ctx.strokeStyle = `rgba(${n.breached ? '0, 255, 0' : rgbCyan}, 0.22)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, rSize * 1.5, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          if (n.intrusion > 0 && !n.breached) {
+            ctx.strokeStyle = secondaryColor;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, rSize + 3, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * n.intrusion) / 100);
+            ctx.stroke();
+          }
+        });
+
+        // 6. ローグログのスクロール描画
+        ctx.font = '8px "Share Tech Mono", monospace';
+        for (let i = logs.length - 1; i >= 0; i--) {
+          const log = logs[i];
+          log.y -= log.speed;
+          log.alpha -= 0.005;
+
+          if (log.alpha <= 0 || log.y < 30) {
+            logs.splice(i, 1);
+            continue;
+          }
+
+          ctx.fillStyle = log.color;
+          ctx.globalAlpha = log.alpha;
+          ctx.fillText(log.text, 15, log.y);
+        }
+        ctx.globalAlpha = 1.0;
 
       } else {
         // ⚡ 通常のサイバーパンク・バー状ビジュアライザー
@@ -360,9 +713,47 @@ const SpectrumVisualizer = ({ isPlaying, analyser = null, isAsmrMode = false, tr
 
         {/* 2. The Spectrogram Box */}
         <div className="spectrum-box" style={{ margin: 0, flex: 1, maxWidth: '800px' }}>
-          <div className="spectrum-header">
-            <span className="glitch" data-text="[SYS.AUDIO.SPECTROGRAM]">[システム.オーディオ.スペクトログラム]</span>
-            <span>FREQ: 20Hz - 20kHz | 状態: {isPlaying ? (analyser ? '実解析中' : 'シミュレート中') : '待機中'}</span>
+          <div className="spectrum-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <span className="glitch" data-text={visualizerMode === 'hacker_grid' ? "[SYS.HACK.MATRIX]" : "[SYS.AUDIO.SPECTROGRAM]"}>
+                {visualizerMode === 'hacker_grid' ? "[電脳グリッド.ハックシミュレーション]" : "[システム.オーディオ.スペクトログラム]"}
+              </span>
+              {!isAsmrMode && (
+                <div style={{ display: 'flex', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', padding: '2px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <button
+                    onClick={() => setVisualizerMode('spectrogram')}
+                    style={{
+                      background: visualizerMode === 'spectrogram' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      border: 'none',
+                      color: visualizerMode === 'spectrogram' ? '#fff' : 'var(--text-muted)',
+                      fontSize: '0.6rem',
+                      fontFamily: 'var(--font-mono)',
+                      padding: '2px 8px',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    SPECTRO
+                  </button>
+                  <button
+                    onClick={() => setVisualizerMode('hacker_grid')}
+                    style={{
+                      background: visualizerMode === 'hacker_grid' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      border: 'none',
+                      color: visualizerMode === 'hacker_grid' ? '#fff' : 'var(--text-muted)',
+                      fontSize: '0.6rem',
+                      fontFamily: 'var(--font-mono)',
+                      padding: '2px 8px',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    GRID.HACK
+                  </button>
+                </div>
+              )}
+            </div>
+            <span>状態: {isPlaying ? (analyser ? '解析中' : 'シミュレート中') : '待機中'}</span>
           </div>
           
           {/* Inner Flex Row inside the box (Spinning Vinyl Disk + Canvas Wave) */}

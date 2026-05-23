@@ -2,6 +2,75 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, X, MonitorPlay, Sparkles, SlidersHorizontal, Activity, Share2 } from 'lucide-react';
 import WaveformSeekbar from './WaveformSeekbar';
 
+const initFullScreenGrid = (width, height, baseRadius) => {
+  const nodes = [];
+  const links = [];
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  // 1. Center virtual core ring (inside the album disc)
+  nodes.push({
+    id: 'core',
+    x: centerX,
+    y: centerY,
+    type: 'core',
+    size: 0,
+    pulse: 1,
+    intrusion: 0,
+    breached: false,
+    label: 'CENTRAL_DECK'
+  });
+
+  // 2. Firewall Ring (Concentric)
+  const fwCount = 4;
+  for (let i = 0; i < fwCount; i++) {
+    const angle = (i * Math.PI * 2) / fwCount + Math.PI / 4;
+    const dist = baseRadius * 1.5;
+    const id = `fw_${i}`;
+    nodes.push({
+      id,
+      x: centerX + Math.cos(angle) * dist,
+      y: centerY + Math.sin(angle) * dist,
+      type: 'firewall',
+      size: 11,
+      pulse: 1,
+      intrusion: 0,
+      breached: false,
+      label: `FW_GATE_0${i}`
+    });
+    links.push({ source: 'core', target: id });
+  }
+
+  // Link firewall nodes to each other to form a barrier shield ring
+  for (let i = 0; i < fwCount; i++) {
+    links.push({ source: `fw_${i}`, target: `fw_${(i + 1) % fwCount}` });
+  }
+
+  // 3. Sub-nodes (Branching outwards)
+  const subNodeCount = 12;
+  for (let i = 0; i < subNodeCount; i++) {
+    const angle = (i * Math.PI * 2) / subNodeCount;
+    const fwIdx = Math.floor((i / subNodeCount) * fwCount);
+    const parentId = `fw_${fwIdx}`;
+    const dist = baseRadius * (2.1 + Math.random() * 0.4);
+    const id = `sub_${i}`;
+    nodes.push({
+      id,
+      x: centerX + Math.cos(angle) * dist,
+      y: centerY + Math.sin(angle) * dist,
+      type: 'node',
+      size: 6,
+      pulse: 1,
+      intrusion: 0,
+      breached: false,
+      label: `DB_NODE_${i.toString(16).toUpperCase()}`
+    });
+    links.push({ source: parentId, target: id });
+  }
+
+  return { nodes, links, initialized: true };
+};
+
 const FullScreenPlayer = ({
   isPlaying,
   setIsPlaying,
@@ -53,6 +122,12 @@ const FullScreenPlayer = ({
   const lyricsContainerRef = useRef(null);
   const [bassScale, setBassScale] = useState(1);
   const [activeTab, setActiveTab] = useState('eq'); // 'eq' | 'fx' | 'lyrics'
+  
+  // Refs to persist visualizer data between drawing frames in FullScreenPlayer
+  const gridRef = useRef({ nodes: [], links: [], initialized: false, width: 0, height: 0 });
+  const packetsRef = useRef([]);
+  const ringsRef = useRef([]);
+  const logsRef = useRef([]);
 
   // 歌詞が存在する場合、自動的に歌詞タブに切り替える
   useEffect(() => {
@@ -240,60 +315,314 @@ const FullScreenPlayer = ({
       ctx.lineWidth = 4;
       ctx.lineCap = 'round';
 
-      for (let i = 0; i < bars; i++) {
-        const value = drawData[i];
-        // バーの長さの計算
-        const barLength = (value / 255) * baseRadius * 1.3 + 2; 
+      if (!isAsmrMode && visualizerMode === 'hacker_grid') {
+        // 👾 フルスクリーン専用 コンセントリック・ホログラフィックグリッド・ビジュアライザー
+        if (!gridRef.current.initialized || gridRef.current.width !== canvas.width || gridRef.current.height !== canvas.height) {
+          gridRef.current = initFullScreenGrid(canvas.width, canvas.height, baseRadius);
+          gridRef.current.width = canvas.width;
+          gridRef.current.height = canvas.height;
+        }
 
-        // 角度の算出 (全周に均等配置)
-        const angle = i * (2 * Math.PI / bars);
-        
-        // 開始地点 (ホログラムディスクのフチ)
-        const startX = centerX + Math.cos(angle) * (baseRadius * bassScale);
-        const startY = centerY + Math.sin(angle) * (baseRadius * bassScale);
+        const { nodes, links } = gridRef.current;
+        const packets = packetsRef.current;
+        const rings = ringsRef.current;
+        const logs = logsRef.current;
 
-        // 終了地点 (バーの長さ分外側へ)
-        const endX = centerX + Math.cos(angle) * (baseRadius * bassScale + barLength);
-        const endY = centerY + Math.sin(angle) * (baseRadius * bassScale + barLength);
+        // キック（低音）で中心のコアから外側へデータパケット射出
+        if (isPlaying && averageBass > 150 && Math.random() < 0.16) {
+          const link = links[Math.floor(Math.random() * links.length)];
+          const sourceNode = nodes.find(n => n.id === link.source);
+          const targetNode = nodes.find(n => n.id === link.target);
 
-        // サイバーパンクグラデーションカラーの決定
-        const percent = i / bars;
-        let r, g, b;
-        if (isAsmrMode) {
-          if (percent < 0.5) {
-            r = 0; g = 255; b = 204; // オーロラエメラルド
-          } else {
-            r = 140; g = 0; b = 255; // ルナバイオレット
-          }
-        } else {
-          if (percent < 0.33) {
-            const parts = rgbCyan.split(',').map(Number);
-            r = parts[0]; g = parts[1]; b = parts[2];
-          } else if (percent < 0.66) {
-            const parts = rgbPurple.split(',').map(Number);
-            r = parts[0]; g = parts[1]; b = parts[2];
-          } else {
-            const parts = rgbPink.split(',').map(Number);
-            r = parts[0]; g = parts[1]; b = parts[2];
+          if (sourceNode && targetNode) {
+            packets.push({
+              sourceId: link.source,
+              targetId: link.target,
+              x: sourceNode.x,
+              y: sourceNode.y,
+              progress: 0,
+              speed: 0.025 + (averageBass / 255) * 0.02,
+              color: Math.random() > 0.5 ? `rgb(${rgbCyan})` : `rgb(${rgbPink})`
+            });
           }
         }
 
-        ctx.strokeStyle = `rgb(${r},${g},${b})`;
-        ctx.shadowBlur = Math.min(20, barLength / 3);
-        ctx.shadowColor = `rgb(${r},${g},${b})`;
+        // 高音（トレブル）で不規則な電気ショート
+        let drawLightning = false;
+        let lSource, lTarget;
+        if (isPlaying && averageBass < 140 && Math.random() < 0.08) {
+          const subNodes = nodes.filter(n => n.type === 'node');
+          if (subNodes.length >= 2) {
+            lSource = subNodes[Math.floor(Math.random() * subNodes.length)];
+            lTarget = subNodes[Math.floor(Math.random() * subNodes.length)];
+            if (lSource.id !== lTarget.id) {
+              drawLightning = true;
+            }
+          }
+        }
 
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
+        // 定期的にハッキングログを出力
+        if (isPlaying && Math.random() < 0.04) {
+          const addresses = ["0x0F8B", "0xFF30", "0x5E8A", "0x9D0C", "0x7A4C", "0xCC5D", "0xE25F", "0xF58B"];
+          const logsList = [
+            "DECRYPT_FILE: OVERWRITE_KEY",
+            "SECTOR_TRACE 0x4F_SEC...",
+            "SSL_BYPASS PORT_443...",
+            "STACK_OVERFLOW DIRECT",
+            "HOLO_DECK_SYNC COMPLETE",
+            "INTRUSION SEC_LEVEL_3",
+            "BOOSTING SYSTEM_COCKPIT",
+            "OVERRIDING DISK_SECTOR"
+          ];
+          const addr = addresses[Math.floor(Math.random() * addresses.length)];
+          const text = logsList[Math.floor(Math.random() * logsList.length)];
+          logs.push({
+            text: `[${addr}] ${text}`,
+            color: Math.random() > 0.6 ? `rgb(${rgbPink})` : `rgb(${rgbCyan})`,
+            y: canvas.height - 15,
+            alpha: 1.0,
+            speed: 1.0 + Math.random() * 0.5
+          });
+        }
 
-        // スペクトルの先端に光るネオンドットを描画
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = `rgb(${r},${g},${b})`;
-        ctx.beginPath();
-        ctx.arc(endX, endY, 3, 0, 2 * Math.PI);
-        ctx.fill();
+        // 2. 接続線の描画
+        ctx.lineWidth = 1.2;
+        links.forEach(l => {
+          const sNode = nodes.find(n => n.id === l.source);
+          const tNode = nodes.find(n => n.id === l.target);
+          if (sNode && tNode) {
+            if (sNode.id === 'core') return;
+
+            const baseAlpha = 0.07;
+            const glowAlpha = (averageBass / 255) * 0.15;
+            ctx.strokeStyle = sNode.breached && tNode.breached 
+              ? 'rgba(0, 255, 0, 0.25)' 
+              : `rgba(${rgbCyan}, ${baseAlpha + glowAlpha})`;
+            ctx.beginPath();
+            ctx.moveTo(sNode.x, sNode.y);
+            ctx.lineTo(tNode.x, tNode.y);
+            ctx.stroke();
+          }
+        });
+
+        // 3. パケットドットの更新・描画
+        for (let i = packets.length - 1; i >= 0; i--) {
+          const p = packets[i];
+          const sNode = nodes.find(n => n.id === p.sourceId);
+          const tNode = nodes.find(n => n.id === p.targetId);
+
+          if (!sNode || !tNode) {
+            packets.splice(i, 1);
+            continue;
+          }
+
+          p.progress += p.speed;
+          p.x = sNode.x + (tNode.x - sNode.x) * p.progress;
+          p.y = sNode.y + (tNode.y - sNode.y) * p.progress;
+
+          if (p.progress >= 1) {
+            packets.splice(i, 1);
+            if (!tNode.breached) {
+              tNode.intrusion = Math.min(100, tNode.intrusion + Math.floor(Math.random() * 15) + 12);
+              if (tNode.intrusion === 100) {
+                tNode.breached = true;
+                rings.push({
+                  x: tNode.x,
+                  y: tNode.y,
+                  radius: 4,
+                  maxRadius: 40,
+                  alpha: 1.0,
+                  color: '#00ff00'
+                });
+                logs.push({
+                  text: `🤖 [SEC_BREACHED]: ${tNode.label} ACQUIRED!`,
+                  color: '#00ff00',
+                  y: canvas.height - 15,
+                  alpha: 1.0,
+                  speed: 1.5
+                });
+              }
+            }
+            continue;
+          }
+
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+
+        // 4. 雷撃グリッドショート
+        if (drawLightning && lSource && lTarget) {
+          ctx.strokeStyle = `rgba(${rgbPink}, 0.85)`;
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = `rgb(${rgbPink})`;
+          ctx.beginPath();
+          ctx.moveTo(lSource.x, lSource.y);
+          const midX = (lSource.x + lTarget.x) / 2 + (Math.random() - 0.5) * 40;
+          const midY = (lSource.y + lTarget.y) / 2 + (Math.random() - 0.5) * 40;
+          ctx.lineTo(midX, midY);
+          ctx.lineTo(lTarget.x, lTarget.y);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+
+        // 5. 波紋リングの描画
+        for (let i = rings.length - 1; i >= 0; i--) {
+          const r = rings[i];
+          r.radius += 1.8;
+          r.alpha -= 0.035;
+
+          if (r.alpha <= 0) {
+            rings.splice(i, 1);
+            continue;
+          }
+
+          ctx.strokeStyle = r.color;
+          ctx.lineWidth = 2.5;
+          ctx.globalAlpha = r.alpha;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = r.color;
+          ctx.beginPath();
+          ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+        ctx.globalAlpha = 1.0;
+
+        // 6. ノードの描画
+        nodes.forEach(n => {
+          if (n.id === 'core') return;
+
+          if (n.type === 'firewall') {
+            n.pulse = 1 + (averageBass / 255) * 0.12 * Math.sin(Date.now() * 0.004 + n.x);
+          } else {
+            n.pulse = 1 + (averageBass / 255) * 0.08 * Math.cos(Date.now() * 0.004 + n.y);
+          }
+
+          const rSize = n.size * n.pulse;
+
+          let nColor = `rgb(${rgbCyan})`;
+          let glowGlow = 0;
+          if (n.breached) {
+            nColor = '#00ff00';
+            glowGlow = 16;
+          } else if (n.intrusion > 0) {
+            const factor = n.intrusion / 100;
+            const partsC = rgbCyan.split(',').map(Number);
+            const partsP = rgbPink.split(',').map(Number);
+            const r = Math.floor(partsC[0] + (partsP[0] - partsC[0]) * factor);
+            const g = Math.floor(partsC[1] + (partsP[1] - partsC[1]) * factor);
+            const b = Math.floor(partsC[2] + (partsP[2] - partsC[2]) * factor);
+            nColor = `rgb(${r},${g},${b})`;
+            glowGlow = 8 + factor * 8;
+          } else {
+            glowGlow = 8;
+          }
+
+          ctx.save();
+          ctx.shadowColor = nColor;
+          ctx.shadowBlur = glowGlow;
+          ctx.fillStyle = nColor;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, rSize, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          if (n.type === 'firewall') {
+            ctx.strokeStyle = `rgba(${n.breached ? '0, 255, 0' : rgbCyan}, 0.25)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, rSize * 1.5, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          if (n.intrusion > 0 && !n.breached) {
+            ctx.strokeStyle = `rgb(${rgbPink})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, rSize + 3, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * n.intrusion) / 100);
+            ctx.stroke();
+          }
+        });
+
+        // 7. ハッキングスクロールログ
+        ctx.font = '8px "Share Tech Mono", monospace';
+        for (let i = logs.length - 1; i >= 0; i--) {
+          const log = logs[i];
+          log.y -= log.speed;
+          log.alpha -= 0.005;
+
+          if (log.alpha <= 0 || log.y < 40) {
+            logs.splice(i, 1);
+            continue;
+          }
+
+          ctx.fillStyle = log.color;
+          ctx.globalAlpha = log.alpha;
+          ctx.fillText(log.text, 25, log.y);
+        }
+        ctx.globalAlpha = 1.0;
+
+      } else {
+        // ⚡ 通常の円形イコライザー（従来の描画コード）
+        // 円形ビジュアライザーの描画
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+
+        for (let i = 0; i < bars; i++) {
+          const value = drawData[i];
+          const barLength = (value / 255) * baseRadius * 1.3 + 2; 
+
+          const angle = i * (2 * Math.PI / bars);
+          
+          const startX = centerX + Math.cos(angle) * (baseRadius * bassScale);
+          const startY = centerY + Math.sin(angle) * (baseRadius * bassScale);
+
+          const endX = centerX + Math.cos(angle) * (baseRadius * bassScale + barLength);
+          const endY = centerY + Math.sin(angle) * (baseRadius * bassScale + barLength);
+
+          const percent = i / bars;
+          let r, g, b;
+          if (isAsmrMode) {
+            if (percent < 0.5) {
+              r = 0; g = 255; b = 204;
+            } else {
+              r = 140; g = 0; b = 255;
+            }
+          } else {
+            if (percent < 0.33) {
+              const parts = rgbCyan.split(',').map(Number);
+              r = parts[0]; g = parts[1]; b = parts[2];
+            } else if (percent < 0.66) {
+              const parts = rgbPurple.split(',').map(Number);
+              r = parts[0]; g = parts[1]; b = parts[2];
+            } else {
+              const parts = rgbPink.split(',').map(Number);
+              r = parts[0]; g = parts[1]; b = parts[2];
+            }
+          }
+
+          ctx.strokeStyle = `rgb(${r},${g},${b})`;
+          ctx.shadowBlur = Math.min(20, barLength / 3);
+          ctx.shadowColor = `rgb(${r},${g},${b})`;
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = `rgb(${r},${g},${b})`;
+          ctx.beginPath();
+          ctx.arc(endX, endY, 3, 0, 2 * Math.PI);
+          ctx.fill();
+        }
       }
 
       // サイバーな「グリッド円」を周囲に描く
@@ -338,7 +667,43 @@ const FullScreenPlayer = ({
           <h1 className="glitch" data-text="CloudGroove">CloudGroove</h1>
         </div>
 
-        <div className="fs-action-buttons" style={{ display: 'flex', gap: '15px' }}>
+        <div className="fs-action-buttons" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          {!isAsmrMode && (
+            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.5)', borderRadius: '6px', padding: '3px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <button
+                onClick={() => setVisualizerMode('spectrogram')}
+                style={{
+                  background: visualizerMode === 'spectrogram' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  border: 'none',
+                  color: visualizerMode === 'spectrogram' ? '#fff' : 'var(--text-muted)',
+                  fontSize: '0.65rem',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '3px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                SPECTRO
+              </button>
+              <button
+                onClick={() => setVisualizerMode('hacker_grid')}
+                style={{
+                  background: visualizerMode === 'hacker_grid' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  border: 'none',
+                  color: visualizerMode === 'hacker_grid' ? '#fff' : 'var(--text-muted)',
+                  fontSize: '0.65rem',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '3px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                GRID.HACK
+              </button>
+            </div>
+          )}
           <button className="fs-icon-btn glow-cyan" onClick={onShareClick} title="共有リンク確立 [SYS.SHARE]" style={{ borderColor: 'var(--neon-pink)', boxShadow: '0 0 15px rgba(255, 0, 127, 0.25)' }}>
             <Share2 size={22} style={{ color: 'var(--neon-pink)' }} />
             <span style={{ fontSize: '0.75rem', fontFamily: 'Orbitron', marginLeft: '5px', color: 'var(--neon-pink)' }}>SHARE</span>

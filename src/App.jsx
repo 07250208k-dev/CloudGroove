@@ -53,6 +53,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [hasBootstrapped, setHasBootstrapped] = useState(false);
+  const [visualizerMode, setVisualizerMode] = useState(localStorage.getItem('cg_vis_mode') || 'hacker_grid');
 
   // --- Upload & Download States ---
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -2337,7 +2338,17 @@ function App() {
           preload="auto"
         />
 
-        <SpectrumVisualizer isPlaying={isPlaying} analyser={analyserRef.current} isAsmrMode={isAsmrMode} trackMetadata={trackMetadata} />
+        <SpectrumVisualizer 
+          isPlaying={isPlaying} 
+          analyser={analyserRef.current} 
+          isAsmrMode={isAsmrMode} 
+          trackMetadata={trackMetadata} 
+          visualizerMode={visualizerMode}
+          setVisualizerMode={(mode) => {
+            setVisualizerMode(mode);
+            localStorage.setItem('cg_vis_mode', mode);
+          }}
+        />
 
         <div className="tracklist-container">
           {isLoading && (
@@ -2948,6 +2959,11 @@ function App() {
           currentBlob={currentBlob}
           trackMetadata={trackMetadata}
           currentLyrics={currentLyrics}
+          visualizerMode={visualizerMode}
+          setVisualizerMode={(mode) => {
+            setVisualizerMode(mode);
+            localStorage.setItem('cg_vis_mode', mode);
+          }}
           progress={trackProgress}
           duration={trackDuration}
           onSeek={handleSeek}
