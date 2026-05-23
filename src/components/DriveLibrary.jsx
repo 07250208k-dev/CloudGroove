@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, Folder, Lock, ListMusic, Zap, Coffee, Plus, Sparkles, FolderOpen, Trash2, X } from 'lucide-react';
+import { HardDrive, Folder, Lock, ListMusic, Zap, Coffee, Plus, Sparkles, FolderOpen, Trash2, X, Upload, Download, Edit3 } from 'lucide-react';
 
 const DriveLibrary = ({ 
   tracks = [], 
@@ -12,7 +12,12 @@ const DriveLibrary = ({
   selectedPlaylistId = null,
   onPlaylistSelect,
   onCreatePlaylist,
-  onDeletePlaylist
+  onDeletePlaylist,
+  isSyncActive = false,
+  onUploadClick,
+  onFolderDownload,
+  onFolderDelete,
+  onFolderRename
 }) => {
   const [showSecret, setShowSecret] = useState(false);
 
@@ -49,7 +54,30 @@ const DriveLibrary = ({
       
       {/* G-Drive (フォルダ階層) セクション */}
       <div className="library-section">
-        <h2><HardDrive size={16} /> G-Drive (フォルダ)</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h2><HardDrive size={16} /> G-Drive (フォルダ)</h2>
+          {isSyncActive && (
+            <button
+              onClick={onUploadClick}
+              title="音声/フォルダを同期アップロード"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--neon-cyan)',
+                color: 'var(--neon-cyan)',
+                borderRadius: '4px',
+                width: '24px',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 0 5px rgba(0, 243, 255, 0.2)'
+              }}
+            >
+              <Upload size={14} />
+            </button>
+          )}
+        </div>
         <ul className="folder-tree" style={{ maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
           {/* すべての曲 (マイドライブ全体) */}
           <li 
@@ -101,6 +129,72 @@ const DriveLibrary = ({
                     }}>
                       {count} trk
                     </span>
+                  )}
+                  {isActive && isSyncActive && (
+                    <div style={{ display: 'flex', gap: '6px', marginLeft: '6px', flexShrink: 0 }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFolderRename(folder.id, folder.name);
+                        }}
+                        title="フォルダ名を変更"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--neon-cyan)',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s'
+                        }}
+                      >
+                        <Edit3 size={13} className="edit-icon" />
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFolderDownload(folder.id, folder.name);
+                        }}
+                        title="このフォルダをZIPで一括ダウンロード"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--neon-cyan)',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s'
+                        }}
+                      >
+                        <Download size={13} className="download-icon" />
+                      </button>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFolderDelete(folder.id, folder.name);
+                        }}
+                        title="このフォルダを永久削除"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--neon-pink)',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s'
+                        }}
+                      >
+                        <Trash2 size={13} className="trash-icon" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </li>

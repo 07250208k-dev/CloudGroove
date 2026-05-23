@@ -1369,3 +1369,109 @@ body.pip-body {
   to { transform: rotate(360deg); }
 }
 
+/* ==========================================================================
+   👾 サイバーパンク・アップロード＆ダウンロードモーダル
+   ========================================================================== */
+.cyber-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(3, 3, 6, 0.75);
+  backdrop-filter: blur(15px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: modal-fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.cyber-modal {
+  background: rgba(10, 10, 18, 0.95);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  padding: 25px;
+  position: relative;
+  z-index: 1010;
+  font-family: var(--font-ui);
+  animation: modal-scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes modal-scale-up {
+  from { transform: scale(0.9) translateY(20px); }
+  to { transform: scale(1) translateY(0); }
+}
+
+.container-glow-cyan {
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 
+    0 10px 40px rgba(0, 0, 0, 0.8),
+    0 0 20px rgba(0, 243, 255, 0.25),
+    inset 0 0 15px rgba(0, 243, 255, 0.05);
+}
+
+.container-glow-pink {
+  border: 1px solid var(--neon-pink);
+  box-shadow: 
+    0 10px 40px rgba(0, 0, 0, 0.8),
+    0 0 20px rgba(255, 0, 127, 0.25),
+    inset 0 0 15px rgba(255, 0, 127, 0.05);
+}
+
+/* ドラッグ＆ドロップ ＆ フォルダ選択ゾーンのホバーエフェクト */
+.file-dropzone {
+  transition: all 0.3s ease;
+}
+.file-dropzone:hover {
+  background: rgba(0, 243, 255, 0.05) !important;
+  box-shadow: inset 0 0 15px rgba(0, 243, 255, 0.1);
+  transform: translateY(-2px);
+}
+.active-tab {
+  text-shadow: 0 0 8px currentColor;
+  box-shadow: 0 0 12px rgba(0, 243, 255, 0.15) !important;
+}
+
+/* スクロールバーのサイバー化 */
+.log-area::-webkit-scrollbar,
+.metadata-form::-webkit-scrollbar {
+  width: 4px;
+}
+.log-area::-webkit-scrollbar-track,
+.metadata-form::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+.log-area::-webkit-scrollbar-thumb,
+.metadata-form::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+.log-area::-webkit-scrollbar-thumb:hover,
+.metadata-form::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-cyan);
+}
+
+/* アクションボタンの輝き */
+.track-action-btn:hover {
+  opacity: 1 !important;
+  transform: scale(1.1);
+  color: #fff !important;
+  filter: drop-shadow(0 0 6px var(--neon-cyan));
+}
+.track-action-btn.remove-btn:hover {
+  filter: drop-shadow(0 0 6px var(--neon-pink));
+}
+
+/* フォルダダウンロードのホバー */
+.download-icon:hover {
+  color: var(--neon-pink) !important;
+  filter: drop-shadow(0 0 6px var(--neon-pink));
+}
+

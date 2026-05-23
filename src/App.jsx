@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus } from 'lucide-react';
+import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3 } from 'lucide-react';
 import DriveLibrary from './components/DriveLibrary';
 import SpectrumVisualizer from './components/SpectrumVisualizer';
 import Player from './components/Player';
 import AIDJ from './components/AIDJ';
 import FullScreenPlayer from './components/FullScreenPlayer';
+import UploadModal from './components/UploadModal';
+import TagEditModal from './components/TagEditModal';
 
 function App() {
   const [renderError, setRenderError] = useState(null);
@@ -42,6 +44,13 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // --- Upload & Download States ---
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [editingTrack, setEditingTrack] = useState(null);
+  const [isDownloadingFolder, setIsDownloadingFolder] = useState(false);
+  const [dlProgress, setDlProgress] = useState(0);
+  const [dlLogs, setDlLogs] = useState([]);
 
   // Google Drive & Auth States
   const [clientId, setClientId] = useState(localStorage.getItem('cg_client_id') || '210521239989-t2bvp162ed8mntukhjndrg3b5tgc2fmq.apps.googleusercontent.com');
@@ -289,7 +298,7 @@ function App() {
       try {
         tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
-          scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile',
+          scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile',
           callback: async (response) => {
             if (response.error) {
               alert('認証エラー: ' + response.error);
@@ -446,6 +455,217 @@ function App() {
     }
   };
 
+  // --- 音声ファイル単体ダウンロードロジック ---
+  const downloadSingleTrack = async (track) => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) throw new Error('音声データのダウンロードに失敗しました');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = track.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      alert(`ダウンロードエラー: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- フォルダZIP一括ダウンロードロジック ---
+  const downloadFolderAsZip = async (folderId, folderName) => {
+    if (!accessToken) return;
+    setIsDownloadingFolder(true);
+    setDlProgress(0);
+    setDlLogs([]);
+    
+    const addDlLog = (text, type = 'info') => {
+      const timestamp = new Date().toLocaleTimeString();
+      setDlLogs(prev => [...prev, `[${timestamp}] [${type.toUpperCase()}] ${text}`]);
+    };
+
+    addDlLog(`INITIATING ZIP COMPILATION PROTOCOL FOR: "${folderName}"`, 'sys');
+
+    try {
+      addDlLog(`FETCHING FILE SYSTEM STRUCTURE FROM REMOTE CLOUD...`, 'sys');
+      let q = `'${folderId}' in parents and trashed = false and (mimeType = 'audio/mpeg' or mimeType = 'audio/mp3' or mimeType = 'audio/wav' or mimeType = 'audio/x-wav' or mimeType = 'audio/mp4' or mimeType = 'audio/x-m4a' or mimeType = 'audio/flac' or mimeType = 'audio/x-flac' or mimeType = 'audio/ogg' or mimeType = 'audio/aac' or mimeType = 'audio/x-aac' or name contains '.mp3' or name contains '.wav' or name contains '.m4a' or name contains '.flac' or name contains '.ogg' or name contains '.aac')`;
+      const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size)&pageSize=100`;
+      
+      const listRes = await fetch(listUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!listRes.ok) throw new Error('ファイル一覧の取得に失敗しました');
+      const listData = await listRes.json();
+      const filesToDownload = listData.files || [];
+
+      if (filesToDownload.length === 0) {
+        addDlLog(`NO DOWNLOADABLE AUDIO FILES DETECTED IN THIS DIRECTORY.`, 'error');
+        alert('このフォルダ内に対応する音声ファイル（MP3, WAV, M4A等）が見つかりませんでした。');
+        setIsDownloadingFolder(false);
+        return;
+      }
+
+      addDlLog(`DETECTED ${filesToDownload.length} AUDIO FILES. STARTING STREAM CAPTURING...`, 'sys');
+      
+      if (!window.JSZip) {
+        throw new Error('JSZip library not found. Please refresh the page and try again.');
+      }
+      
+      const zip = new window.JSZip();
+      let successCount = 0;
+
+      for (let i = 0; i < filesToDownload.length; i++) {
+        const file = filesToDownload[i];
+        addDlLog(`DOWNLOADING [${i + 1}/${filesToDownload.length}]: "${file.name}"...`, 'sys');
+
+        try {
+          const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          if (!res.ok) throw new Error('API capture error');
+          const blob = await res.blob();
+          
+          zip.file(file.name, blob);
+          successCount++;
+          addDlLog(`ADDED TO ZIP CACHE: "${file.name}" [OK]`, 'ok');
+        } catch (e) {
+          addDlLog(`FAILED TO CAPTURE: "${file.name}" - ${e.message}`, 'warn');
+        }
+
+        // ダウンロード進捗を全体の80%として算出
+        setDlProgress(Math.round(((i + 1) / filesToDownload.length) * 80));
+      }
+
+      if (successCount === 0) {
+        throw new Error('すべてのファイルのダウンロードに失敗しました。');
+      }
+
+      addDlLog(`CAPTURE PHASE COMPLETE. COMPILING ZIP ARCHIVE PACKETS...`, 'sys');
+      setDlProgress(85);
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+        // 圧縮状況を85%〜100%にマッピング
+        setDlProgress(Math.round(85 + (metadata.percent * 0.15)));
+      });
+
+      addDlLog(`ZIP ARCHIVE SUCCESSFULLY COMPILED. LAUNCHING DOWNLOAD SEQUENCE...`, 'ok');
+      
+      const objectUrl = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `${folderName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+
+      addDlLog(`SEQUENCE SUCCESSFUL. LOCAL STREAM COMPLETED. [OK]`, 'sys');
+      
+      setTimeout(() => {
+        setIsDownloadingFolder(false);
+      }, 1500);
+
+    } catch (err) {
+      addDlLog(`CRITICAL ERROR DURING PIPELINE SYNCHRONIZATION: ${err.message}`, 'error');
+      setTimeout(() => {
+        setIsDownloadingFolder(false);
+      }, 3000);
+    }
+  };
+
+  // --- Google Driveファイル（トラック）永久削除 ---
+  const deleteTrack = async (track) => {
+    if (!accessToken) return;
+    if (!confirm(`[WARNING] "${track.name}" をGoogle Driveから永久に削除しますか？\nこの操作は取り消せません。`)) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) throw new Error('API delete request failed');
+      
+      // 再生中だった場合は停止する
+      if (currentTrack && currentTrack.id === track.id) {
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        setCurrentTrack(null);
+        setTrackMetadata(null);
+        setIsPlaying(false);
+      }
+
+      alert('ファイルを削除しました。');
+      // リスト更新
+      fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
+      scanAudioFolders(accessToken);
+    } catch (err) {
+      alert(`削除エラー: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Google Driveフォルダ永久削除 ---
+  const deleteFolder = async (folderId, folderName) => {
+    if (!accessToken) return;
+    if (!confirm(`[WARNING] フォルダ "${folderName}" とその中のすべてのファイルをGoogle Driveから永久に削除しますか？\nこの操作は取り消せません。`)) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) throw new Error('API delete request failed');
+      
+      alert('フォルダを削除しました。');
+      setSelectedFolderId(null);
+      fetchDriveFiles(accessToken, null);
+      fetchDriveFolders(accessToken);
+      scanAudioFolders(accessToken);
+    } catch (err) {
+      alert(`削除エラー: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Google Driveフォルダ名前変更 ---
+  const renameFolder = async (folderId, oldName) => {
+    if (!accessToken) return;
+    const newName = prompt(`フォルダ「${oldName}」の新しい名前を入力してください:`, oldName);
+    if (!newName || !newName.trim() || newName.trim() === oldName) return;
+    
+    setIsLoading(true);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: newName.trim() })
+      });
+      if (!res.ok) throw new Error('フォルダ名の変更に失敗しました');
+      
+      alert('フォルダ名を変更しました。');
+      fetchDriveFolders(accessToken);
+    } catch (err) {
+      alert(`エラー: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ログイン
   const handleLogin = () => {
     if (!clientId) {
@@ -459,7 +679,7 @@ function App() {
     } else if (window.google) {
       tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile',
+        scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile',
         callback: async (response) => {
           if (response.access_token) {
             setAccessToken(response.access_token);
@@ -980,6 +1200,11 @@ function App() {
         }}
         onCreatePlaylist={handleCreatePlaylist}
         onDeletePlaylist={handleDeletePlaylist}
+        isSyncActive={!!accessToken}
+        onUploadClick={() => setShowUploadModal(true)}
+        onFolderDownload={(folderId, folderName) => downloadFolderAsZip(folderId, folderName)}
+        onFolderDelete={(folderId, folderName) => deleteFolder(folderId, folderName)}
+        onFolderRename={(folderId, oldName) => renameFolder(folderId, oldName)}
       />
 
       <main className="main-content">
@@ -1105,6 +1330,70 @@ function App() {
                           >
                             <Plus size={16} />
                           </button>
+
+                          <button 
+                            className="track-action-btn download-btn"
+                            title="ローカルにダウンロード"
+                            onClick={() => downloadSingleTrack(track)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--neon-cyan)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: 0.6,
+                              transition: 'opacity 0.2s, transform 0.2s'
+                            }}
+                          >
+                            <Download size={16} />
+                          </button>
+
+                          {!selectedPlaylistId && (
+                            <button 
+                              className="track-action-btn edit-btn"
+                              title="ID3タグを再編集"
+                              onClick={() => setEditingTrack(track)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--neon-cyan)',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: 0.6,
+                                transition: 'opacity 0.2s, transform 0.2s'
+                              }}
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                          )}
+                          
+                          {!selectedPlaylistId && (
+                            <button 
+                              className="track-action-btn remove-btn"
+                              title="Google Driveから永久削除"
+                              onClick={() => deleteTrack(track)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--neon-pink)',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: 0.6,
+                                transition: 'opacity 0.2s'
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                           
                           {selectedPlaylistId && (
                             <button 
@@ -1344,6 +1633,74 @@ function App() {
                 </li>
               )}
             </ul>
+          </div>
+        </div>
+      )}
+
+      {/* アップロードモーダル */}
+      <UploadModal 
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        accessToken={accessToken}
+        selectedFolderId={selectedFolderId}
+        onUploadSuccess={() => {
+          fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
+          scanAudioFolders(accessToken); // フォルダごとの曲数も再スキャン
+        }}
+      />
+
+      {/* タグ再編集モーダル */}
+      <TagEditModal 
+        isOpen={!!editingTrack}
+        onClose={() => setEditingTrack(null)}
+        accessToken={accessToken}
+        track={editingTrack}
+        onEditSuccess={() => {
+          fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
+        }}
+      />
+
+      {/* フォルダZIPダウンロード進捗モーダル */}
+      {isDownloadingFolder && (
+        <div className="cyber-modal-overlay">
+          <div className="cyber-modal container-glow-pink" style={{ maxWidth: '400px', width: '90%' }}>
+            <div className="panel-header">
+              <h3>[ZIP_COMPILING_SEQUENCE]</h3>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', padding: '10px 0' }}>
+              <div className="console-panel" style={{
+                background: 'rgba(0,0,0,0.85)',
+                border: '1px solid var(--neon-pink)',
+                borderRadius: '6px',
+                padding: '12px',
+                fontFamily: 'var(--font-mono)'
+              }}>
+                <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {dlLogs.map((log, idx) => {
+                    let color = 'var(--text-muted)';
+                    if (log.includes('[OK]')) color = 'var(--neon-green)';
+                    if (log.includes('[ERROR]')) color = 'var(--neon-pink)';
+                    if (log.includes('[WARN]')) color = '#ffea00';
+                    return <div key={idx} style={{ color }}>{log}</div>;
+                  })}
+                </div>
+              </div>
+              <div className="progress-container" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#fff' }}>
+                  <span>PROCESSING...</span>
+                  <span>{dlProgress}%</span>
+                </div>
+                <div className="progress-bar-bg" style={{ height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div className="progress-bar-fill" style={{
+                    width: `${dlProgress}%`,
+                    height: '100%',
+                    background: 'var(--neon-pink)',
+                    boxShadow: '0 0 10px var(--neon-pink)',
+                    transition: 'width 0.2s ease-out'
+                  }}></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
