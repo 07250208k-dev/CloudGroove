@@ -47,6 +47,7 @@ function App() {
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showDevSettings, setShowDevSettings] = useState(false);
   const [currentTheme, setCurrentTheme] = useState(localStorage.getItem('cg_theme') || 'neon');
   const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -2618,33 +2619,69 @@ function App() {
               <button className="close-btn" onClick={() => setShowSettings(false)}><X size={20} /></button>
             </div>
             <div className="settings-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px 0' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--neon-pink)', fontSize: '0.9rem', fontFamily: 'Orbitron' }}>
-                  Google OAuth クライアント ID
-                </label>
-                <input 
-                  type="text" 
-                  className="settings-input"
+              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '15px' }}>
+                <button
+                  onClick={() => setShowDevSettings(!showDevSettings)}
                   style={{
-                    width: '100%',
-                    padding: '10px',
-                    backgroundColor: 'rgba(0,0,0,0.6)',
-                    border: '1px solid var(--neon-cyan)',
-                    color: '#fff',
-                    borderRadius: '4px',
-                    fontFamily: 'monospace',
-                    fontSize: '0.8rem'
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: 0,
+                    textTransform: 'uppercase',
+                    transition: 'color 0.2s'
                   }}
-                  placeholder="xxxxxx.apps.googleusercontent.com"
-                  defaultValue={clientId}
-                  id="client-id-input"
-                />
-                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.4' }}>
-                  Google Cloud Consoleで取得したクライアントIDを入力してください。
-                </p>
+                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--neon-cyan)'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                >
+                  <span>{showDevSettings ? '[-] HIDE DEVELOPER PROTOCOL' : '[+] SHOW DEVELOPER PROTOCOL'}</span>
+                </button>
+
+                {showDevSettings && (
+                  <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <label style={{ display: 'block', color: 'var(--neon-pink)', fontSize: '0.8rem', fontFamily: 'Orbitron' }}>
+                      Google OAuth クライアント ID
+                    </label>
+                    <input 
+                      type="text" 
+                      className="settings-input"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        border: '1px solid var(--neon-cyan)',
+                        color: '#fff',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '0.8rem'
+                      }}
+                      placeholder="xxxxxx.apps.googleusercontent.com"
+                      defaultValue={clientId}
+                      id="client-id-input"
+                    />
+                    <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      独自のGoogle Cloudプロジェクトを接続してセルフホストする場合のみ、クライアントIDを変更してください。
+                    </p>
+                    <button 
+                      className="play-generated-btn" 
+                      style={{ width: '100%', padding: '8px', fontSize: '0.75rem' }}
+                      onClick={() => {
+                        const inputVal = document.getElementById('client-id-input').value;
+                        handleSaveSettings(inputVal);
+                      }}
+                    >
+                      IDを保存して反映
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '5px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', color: 'var(--neon-pink)', fontSize: '0.9rem', fontFamily: 'Orbitron' }}>
                   クロスフェード時間 [CROSSFADE: {crossfadeDuration}s]
                 </label>
@@ -2712,19 +2749,6 @@ function App() {
                     );
                   })}
                 </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button 
-                  className="play-generated-btn" 
-                  style={{ flex: 1 }}
-                  onClick={() => {
-                    const inputVal = document.getElementById('client-id-input').value;
-                    handleSaveSettings(inputVal);
-                  }}
-                >
-                  保存する
-                </button>
               </div>
 
               {accessToken && (
