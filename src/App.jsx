@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3, Moon, Folder, ListPlus } from 'lucide-react';
+import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3, Moon, Folder, ListPlus, BarChart3 } from 'lucide-react';
 import DriveLibrary from './components/DriveLibrary';
 import SpectrumVisualizer from './components/SpectrumVisualizer';
 import Player from './components/Player';
@@ -10,6 +10,8 @@ import UploadModal from './components/UploadModal';
 import TagEditModal from './components/TagEditModal';
 import MoveModal from './components/MoveModal';
 import CyberToast from './components/CyberToast';
+import StatsConsole from './components/StatsConsole';
+import ShareModal from './components/ShareModal';
 
 function App() {
   const [renderError, setRenderError] = useState(null);
@@ -44,8 +46,12 @@ function App() {
   const [showAIDJ, setShowAIDJ] = useState(false);
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState(localStorage.getItem('cg_theme') || 'neon');
   const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [hasBootstrapped, setHasBootstrapped] = useState(false);
 
   // --- Upload & Download States ---
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -128,18 +134,50 @@ function App() {
 
   // Audio & Web Audio API Refs
   const audioRef = useRef(null);
+  const audioRef2 = useRef(null);
+  const activeAudioRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
+  const sourceRef2 = useRef(null);
   const [audioUrl, setAudioUrl] = useState('');
+  const [currentBlob, setCurrentBlob] = useState(null);
+  const [currentLyrics, setCurrentLyrics] = useState([]);
   const [trackProgress, setTrackProgress] = useState(0);
   const [trackDuration, setTrackDuration] = useState(0);
+  const playLoggedRef = useRef(false);
 
-  // Playback Control & EQ States
+  // Playback Control, Volume & EQ States
+  const [volume, setVolume] = useState(0.7);
+  const [crossfadeDuration, setCrossfadeDuration] = useState(5);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState('none'); // 'none' | 'all' | 'one'
   const [eqGains, setEqGains] = useState([0, 0, 0, 0, 0]); // 60, 230, 910, 3600, 14000 Hz
   const filtersRef = useRef([]);
+
+  // Audio Effects Nodes & States
+  const gainNode1 = useRef(null);
+  const gainNode2 = useRef(null);
+  const masterGainNodeRef = useRef(null);
+  const reverbNodeRef = useRef(null);
+  const reverbWetGainRef = useRef(null);
+  const delayNodeRef = useRef(null);
+  const delayFeedbackGainRef = useRef(null);
+  const delayWetGainRef = useRef(null);
+  const lowpassFilterRef = useRef(null);
+  const highpassFilterRef = useRef(null);
+  const compressorNodeRef = useRef(null);
+  const isCrossfadingRef = useRef(false);
+
+  const [isReverbOn, setIsReverbOn] = useState(false);
+  const [reverbMix, setReverbMix] = useState(30); // 0 to 100
+  const [isDelayOn, setIsDelayOn] = useState(false);
+  const [delayTime, setDelayTime] = useState(0.3); // 0.1 to 1.0s
+  const [delayFeedback, setDelayFeedback] = useState(40); // 0 to 80%
+  const [isFilterOn, setIsFilterOn] = useState(false);
+  const [lowpassFreq, setLowpassFreq] = useState(8000); // 200 to 20000Hz
+  const [highpassFreq, setHighpassFreq] = useState(20); // 20 to 2000Hz
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0); // 0.5x to 2.0x
 
   // Picture in Picture Video Ref
   const videoRef = useRef(null);
@@ -150,6 +188,8 @@ function App() {
     if (!showAIDJ) {
       setShowEQ(false);
       setShowSettings(false);
+      setShowStats(false);
+      setShowAsmrPanel(false);
     }
   };
 
@@ -158,6 +198,8 @@ function App() {
     if (!showEQ) {
       setShowAIDJ(false);
       setShowSettings(false);
+      setShowStats(false);
+      setShowAsmrPanel(false);
     }
   };
 
@@ -166,6 +208,18 @@ function App() {
     if (!showSettings) {
       setShowAIDJ(false);
       setShowEQ(false);
+      setShowStats(false);
+      setShowAsmrPanel(false);
+    }
+  };
+
+  const toggleStats = () => {
+    setShowStats(!showStats);
+    if (!showStats) {
+      setShowAIDJ(false);
+      setShowEQ(false);
+      setShowSettings(false);
+      setShowAsmrPanel(false);
     }
   };
 
@@ -342,10 +396,105 @@ function App() {
     savePlaylists(updated);
   };
 
+  const getSmartPlaylistTracks = (id) => {
+    if (!tracks || tracks.length === 0) return [];
+    
+    // localStorageから再生履歴ログをロード
+    const key = (userProfile && userProfile.sub) ? `cg_play_log_${userProfile.sub}` : 'cg_play_log_guest';
+    const saved = localStorage.getItem(key);
+    let playLogs = [];
+    if (saved) {
+      try { playLogs = JSON.parse(saved); } catch (e) {}
+    }
+    if (!Array.isArray(playLogs)) playLogs = [];
+    
+    switch (id) {
+      case 'sp-recent':
+      case 'sp-asmr-recent':
+        // 最近同期した15曲 (作成日時降順)
+        return [...tracks]
+          .sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime))
+          .slice(0, 15);
+          
+      case 'sp-heavy':
+      case 'sp-asmr-heavy':
+        // 再生履歴ログから再生回数を集計し、多い順にソート
+        const counts = {};
+        playLogs.forEach(entry => {
+          counts[entry.trackId] = (counts[entry.trackId] || 0) + 1;
+        });
+        return [...tracks]
+          .filter(t => counts[t.id] > 0)
+          .sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0))
+          .slice(0, 15);
+          
+      case 'sp-rediscover':
+        // まだ再生されていない、または再生回数の極めて少ない曲をランダム抽出
+        const loggedIds = new Set(playLogs.map(l => l.trackId));
+        const unplayed = tracks.filter(t => !loggedIds.has(t.id));
+        if (unplayed.length >= 5) {
+          return [...unplayed].sort(() => 0.5 - Math.random()).slice(0, 15);
+        } else {
+          const leastCounts = {};
+          playLogs.forEach(entry => {
+            leastCounts[entry.trackId] = (leastCounts[entry.trackId] || 0) + 1;
+          });
+          return [...tracks]
+            .sort((a, b) => (leastCounts[a.id] || 0) - (leastCounts[b.id] || 0))
+            .slice(0, 15);
+        }
+        
+      case 'sp-chill':
+        return tracks.filter(t => {
+          const nameLower = (t.name || '').toLowerCase();
+          return nameLower.includes('lofi') || nameLower.includes('lo-fi') || nameLower.includes('chill') || nameLower.includes('ambient') || nameLower.includes('sleep') || nameLower.includes('relax') || nameLower.includes('rain');
+        });
+        
+      case 'sp-energy':
+        return tracks.filter(t => {
+          const nameLower = (t.name || '').toLowerCase();
+          return nameLower.includes('hype') || nameLower.includes('energy') || nameLower.includes('rock') || nameLower.includes('metal') || nameLower.includes('fast') || nameLower.includes('drive') || nameLower.includes('club') || nameLower.includes('beat') || nameLower.includes('bass') || nameLower.includes('synth');
+        });
+        
+      case 'sp-instrumental':
+        return tracks.filter(t => {
+          const nameLower = (t.name || '').toLowerCase();
+          return nameLower.includes('inst') || nameLower.includes('instrumental') || nameLower.includes('off vocal') || nameLower.includes('offvocal') || nameLower.includes('karaoke') || nameLower.includes('instrument');
+        });
+        
+      case 'sp-asmr-ear':
+        return tracks.filter(t => {
+          const nameLower = (t.name || '').toLowerCase();
+          return nameLower.includes('耳かき') || nameLower.includes('mimikaki') || nameLower.includes('ear cleaning') || nameLower.includes('massage') || nameLower.includes('マッサージ');
+        });
+        
+      case 'sp-asmr-whisper':
+        return tracks.filter(t => {
+          const nameLower = (t.name || '').toLowerCase();
+          return nameLower.includes('ささやき') || nameLower.includes('whisper') || nameLower.includes('voice') || nameLower.includes('音声') || nameLower.includes('ボイス') || nameLower.includes('バイノーラル') || nameLower.includes('binaural');
+        });
+        
+      case 'sp-asmr-nature':
+        return tracks.filter(t => {
+          const nameLower = (t.name || '').toLowerCase();
+          return nameLower.includes('雨') || nameLower.includes('波') || nameLower.includes('雷') || nameLower.includes('自然') || nameLower.includes('rain') || nameLower.includes('wave') || nameLower.includes('thunder') || nameLower.includes('nature') || nameLower.includes('ambient') || nameLower.includes('environment') || nameLower.includes('環境音');
+        });
+        
+      default:
+        return [];
+    }
+  };
+
   // 表示用曲リスト（プレイリスト選択時はその中身、それ以外はGoogle Driveの全曲）
-  const displayTracks = (selectedPlaylistId && Array.isArray(playlists))
-    ? (playlists.find(p => p.id === selectedPlaylistId)?.tracks || [])
-    : (Array.isArray(tracks) ? tracks : []);
+  const displayTracks = (() => {
+    if (selectedPlaylistId) {
+      if (selectedPlaylistId.startsWith('sp-')) {
+        return getSmartPlaylistTracks(selectedPlaylistId);
+      }
+      return playlists.find(p => p.id === selectedPlaylistId)?.tracks || [];
+    }
+    return Array.isArray(tracks) ? tracks : [];
+  })();
 
   // Google OAuth2 Token Client Reference
   const tokenClientRef = useRef(null);
@@ -374,6 +523,98 @@ function App() {
       }
     }
   }, [clientId]);
+
+  // テーマの変更を適用
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    localStorage.setItem('cg_theme', currentTheme);
+  }, [currentTheme]);
+
+  // PWA Service Worker Ready Notification
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(() => {
+        addToast('🤖 PWA.SYSTEM: OFFLINE SHIELD ENGAGED. [OK]', 'sys');
+      });
+    }
+  }, [addToast]);
+
+  // URLクエリパラメータのブート起動処理
+  useEffect(() => {
+    if (!accessToken || hasBootstrapped) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const trackId = params.get('trackId');
+    const playlistId = params.get('playlistId');
+
+    if (!trackId && !playlistId) {
+      setHasBootstrapped(true);
+      return;
+    }
+
+    const boot = async () => {
+      setHasBootstrapped(true);
+      
+      if (trackId) {
+        addToast('🤖 [SYS.BOOT]: RESOLVING SHARED TRACK...', 'sys');
+        const found = tracks.find(t => t.id === trackId);
+        if (found) {
+          addToast(`🤖 [SYS.BOOT]: PLAYING "${found.name.replace(/\.[^/.]+$/, '')}"`, 'success');
+          playTrack(found);
+        } else {
+          try {
+            const res = await fetch(`https://www.googleapis.com/drive/v3/files/${trackId}?fields=id,name,mimeType`, {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (res.ok) {
+              const file = await res.json();
+              if (file.mimeType.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.wav') || file.name.endsWith('.m4a') || file.name.endsWith('.ogg') || file.name.endsWith('.flac')) {
+                const tempTrack = { id: file.id, name: file.name };
+                addToast(`🤖 [SYS.BOOT]: PLAYING EXT-TRACK "${file.name.replace(/\.[^/.]+$/, '')}"`, 'success');
+                playTrack(tempTrack);
+              } else {
+                addToast('⚠️ [SYS.BOOT]: SHARED FILE IS NOT AN AUDIO FILE', 'error');
+              }
+            } else {
+              addToast('⚠️ [SYS.BOOT]: SHARED FILE NOT FOUND OR INACCESSIBLE', 'error');
+            }
+          } catch (err) {
+            console.error('Failed to boot shared track:', err);
+            addToast('⚠️ [SYS.BOOT]: RESOLUTION FAILED', 'error');
+          }
+        }
+      } else if (playlistId) {
+        addToast('🤖 [SYS.BOOT]: COUPLING SHARED PLAYLIST...', 'sys');
+        setSelectedPlaylistId(playlistId);
+        
+        let playlistTracks = [];
+        if (playlistId.startsWith('sp-')) {
+          playlistTracks = getSmartPlaylistTracks(playlistId);
+        } else {
+          playlistTracks = playlists.find(p => p.id === playlistId)?.tracks || [];
+        }
+        
+        if (playlistTracks.length > 0) {
+          addToast(`🤖 [SYS.BOOT]: PLAYING FIRST TRACK OF PLAYLIST`, 'success');
+          playTrack(playlistTracks[0]);
+        } else {
+          addToast('🤖 [SYS.BOOT]: PLAYLIST COUPLED. NO TRACKS TO AUTO-PLAY.', 'info');
+        }
+      }
+      
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+    };
+
+    if (hasScanned || tracks.length > 0) {
+      boot();
+    } else {
+      const timer = setTimeout(() => {
+        boot();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [accessToken, tracks, playlists, hasScanned, hasBootstrapped]);
 
   // トークン起動時のロード
   useEffect(() => {
@@ -968,16 +1209,60 @@ function App() {
     setShowSettings(false);
   };
 
+  const createImpulseResponse = (context, duration, decay) => {
+    const sampleRate = context.sampleRate;
+    const length = sampleRate * duration;
+    const impulse = context.createBuffer(2, length, sampleRate);
+    const left = impulse.getChannelData(0);
+    const right = impulse.getChannelData(1);
+    
+    for (let i = 0; i < length; i++) {
+      const percent = i / length;
+      // 指数関数的に減衰するホワイトノイズで極上のリバーブ残響を表現
+      const val = (Math.random() * 2 - 1) * Math.pow(1 - percent, decay);
+      left[i] = val;
+      right[i] = val;
+    }
+    return impulse;
+  };
+
   const initWebAudio = () => {
-    if (!audioContextRef.current && audioRef.current) {
+    if (!audioContextRef.current && audioRef.current && audioRef2.current) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const ctx = new AudioContextClass();
+      
+      // Analyser
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       
-      const source = ctx.createMediaElementSource(audioRef.current);
+      // 2系統のオーディオソースを作成
+      const source1 = ctx.createMediaElementSource(audioRef.current);
+      const source2 = ctx.createMediaElementSource(audioRef2.current);
       
-      // 5-Band Equalizer Filters (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz)
+      // クロスフェード用のゲインノードを作成
+      const g1 = ctx.createGain();
+      const g2 = ctx.createGain();
+      // 初期状態：1系統目をアクティブ(ゲイン=1)、2系統目をサイレント(ゲイン=0)
+      g1.gain.value = 1.0;
+      g2.gain.value = 0.0;
+      
+      source1.connect(g1);
+      source2.connect(g2);
+      
+      // ローパス & ハイパスフィルター
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = isFilterOn ? lowpassFreq : 20000;
+      
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = isFilterOn ? highpassFreq : 20;
+      
+      g1.connect(lp);
+      g2.connect(lp);
+      lp.connect(hp);
+      
+      // 5バンド・グラフィック・イコライザー（ハイパスの後段に結合）
       const freqs = [60, 230, 910, 3600, 14000];
       const filters = freqs.map((freq, i) => {
         const filter = ctx.createBiquadFilter();
@@ -987,19 +1272,85 @@ function App() {
         filter.gain.value = eqGains[i];
         return filter;
       });
-
-      // Connect: source -> filter0 -> ... -> filter4 -> analyser -> destination
-      let currentSource = source;
+      
+      let currentSource = hp;
       filters.forEach(filter => {
         currentSource.connect(filter);
         currentSource = filter;
       });
-      currentSource.connect(analyser);
-      analyser.connect(ctx.destination);
       
+      // ディレイ & フィードバック回路
+      const delay = ctx.createDelay(1.0);
+      delay.delayTime.value = delayTime;
+      
+      const delayFeedbackNode = ctx.createGain();
+      delayFeedbackNode.gain.value = isDelayOn ? (delayFeedback / 100) : 0;
+      
+      delay.connect(delayFeedbackNode);
+      delayFeedbackNode.connect(delay);
+      
+      // ディレイのウェット出力制御
+      const delayWet = ctx.createGain();
+      delayWet.gain.value = isDelayOn ? 0.4 : 0;
+      
+      currentSource.connect(delay);
+      delay.connect(delayWet);
+      
+      // 残響用リバーブ (Convolver)
+      const reverb = ctx.createConvolver();
+      reverb.buffer = createImpulseResponse(ctx, 2.0, 2.0); // 2秒の残響時間
+      
+      const reverbWet = ctx.createGain();
+      reverbWet.gain.value = isReverbOn ? (reverbMix / 100) : 0;
+      
+      currentSource.connect(reverb);
+      reverb.connect(reverbWet);
+      
+      // ミキサー (ドライ音 + ディレイ湿音 + リバーブ湿音の統合)
+      const effectMixer = ctx.createGain();
+      currentSource.connect(effectMixer);
+      delayWet.connect(effectMixer);
+      reverbWet.connect(effectMixer);
+      
+      // ダイナミクスコンプレッサー (音割れ防止と全体の音圧ブースト)
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-20, ctx.currentTime);
+      compressor.knee.setValueAtTime(30, ctx.currentTime);
+      compressor.ratio.setValueAtTime(10, ctx.currentTime);
+      compressor.attack.setValueAtTime(0.003, ctx.currentTime);
+      compressor.release.setValueAtTime(0.25, ctx.currentTime);
+      
+      effectMixer.connect(compressor);
+      compressor.connect(analyser);
+      
+      // マスター音量ゲイン
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = volume;
+      
+      analyser.connect(masterGain);
+      masterGain.connect(ctx.destination);
+      
+      // 各種リファレンスの格納
       audioContextRef.current = ctx;
       analyserRef.current = analyser;
-      sourceRef.current = source;
+      sourceRef.current = source1;
+      sourceRef2.current = source2;
+      
+      gainNode1.current = g1;
+      gainNode2.current = g2;
+      masterGainNodeRef.current = masterGain;
+      
+      lowpassFilterRef.current = lp;
+      highpassFilterRef.current = hp;
+      
+      delayNodeRef.current = delay;
+      delayFeedbackGainRef.current = delayFeedbackNode;
+      delayWetGainRef.current = delayWet;
+      
+      reverbNodeRef.current = reverb;
+      reverbWetGainRef.current = reverbWet;
+      
+      compressorNodeRef.current = compressor;
       filtersRef.current = filters;
     }
     
@@ -1027,14 +1378,160 @@ function App() {
     });
   };
 
-  const playTrack = async (track) => {
+  const updateFilters = (isOn, lpVal, hpVal) => {
+    if (lowpassFilterRef.current && highpassFilterRef.current && audioContextRef.current) {
+      const time = audioContextRef.current.currentTime;
+      if (isOn) {
+        lowpassFilterRef.current.frequency.setValueAtTime(lpVal, time);
+        highpassFilterRef.current.frequency.setValueAtTime(hpVal, time);
+      } else {
+        lowpassFilterRef.current.frequency.setValueAtTime(20000, time);
+        highpassFilterRef.current.frequency.setValueAtTime(20, time);
+      }
+    }
+  };
+
+  const updateDelay = (isOn, delaySec, feedbackVal) => {
+    if (delayNodeRef.current && delayFeedbackGainRef.current && delayWetGainRef.current && audioContextRef.current) {
+      const time = audioContextRef.current.currentTime;
+      delayNodeRef.current.delayTime.setValueAtTime(delaySec, time);
+      delayFeedbackGainRef.current.gain.setValueAtTime(isOn ? (feedbackVal / 100) : 0, time);
+      delayWetGainRef.current.gain.setValueAtTime(isOn ? 0.4 : 0, time);
+    }
+  };
+
+  const updateReverb = (isOn, mixVal) => {
+    if (reverbWetGainRef.current && audioContextRef.current) {
+      const time = audioContextRef.current.currentTime;
+      reverbWetGainRef.current.gain.setValueAtTime(isOn ? (mixVal / 100) : 0, time);
+    }
+  };
+
+  const updatePlaybackSpeed = (speed) => {
+    setPlaybackSpeed(speed);
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+    if (audioRef2.current) audioRef2.current.playbackRate = speed;
+  };
+
+  const parseLrc = (lrcText) => {
+    const lines = lrcText.split(/\r?\n/);
+    const timeReg = /\[(\d+):(\d+)(?:\.(\d+))?\]/g;
+    const parsed = [];
+    
+    for (const line of lines) {
+      timeReg.lastIndex = 0;
+      let match;
+      const timestamps = [];
+      
+      while ((match = timeReg.exec(line)) !== null) {
+        const min = parseInt(match[1], 10);
+        const sec = parseInt(match[2], 10);
+        const msText = match[3] || "0";
+        const ms = parseFloat("0." + msText) * 1000;
+        const totalSec = min * 60 + sec + ms / 1000;
+        timestamps.push(totalSec);
+      }
+      
+      const cleanText = line.replace(/\[\d+:\d+(?:\.\d+)?\]/g, "").trim();
+      
+      if (timestamps.length > 0) {
+        for (const t of timestamps) {
+          parsed.push({ time: t, text: cleanText });
+        }
+      }
+    }
+    
+    parsed.sort((a, b) => a.time - b.time);
+    return parsed;
+  };
+
+  const fetchLyrics = async (track, token) => {
+    if (!track.parents || track.parents.length === 0) {
+      setCurrentLyrics([]);
+      return;
+    }
+    
+    try {
+      const baseName = track.name.replace(/\.[^/.]+$/, "");
+      const escapedName = baseName.replace(/'/g, "\\'");
+      const q = `'${track.parents[0]}' in parents and name = '${escapedName}.lrc' and trashed = false`;
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`;
+      
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        const files = data.files || [];
+        if (files.length > 0) {
+          const lrcFileId = files[0].id;
+          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${lrcFileId}?alt=media`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (contentRes.ok) {
+            const text = await contentRes.text();
+            const parsed = parseLrc(text);
+            setCurrentLyrics(parsed);
+            return;
+          }
+        }
+      }
+      setCurrentLyrics([]);
+    } catch (e) {
+      console.warn("LRC lyrics search failed:", e);
+      setCurrentLyrics([]);
+    }
+  };
+
+  const logPlayEvent = (track, metadata, exactDuration) => {
+    if (!track) return;
+    try {
+      const baseKey = isAsmrMode ? 'cg_play_log_asmr_' : 'cg_play_log_';
+      const userSub = (userProfile && userProfile.sub) ? userProfile.sub : 'guest';
+      const key = `${baseKey}${userSub}`;
+      const saved = localStorage.getItem(key);
+      let logsList = [];
+      if (saved) {
+        logsList = JSON.parse(saved);
+      }
+      if (!Array.isArray(logsList)) logsList = [];
+      
+      const cleanTitle = metadata?.title || track.name.replace(/\.[^/.]+$/, "");
+      const artistName = metadata?.artist || 'Google Drive 音源';
+      const albumName = metadata?.album || 'マイドライブ';
+      
+      const newEntry = {
+        trackId: track.id,
+        title: cleanTitle,
+        artist: artistName,
+        album: albumName,
+        duration: exactDuration && !isNaN(exactDuration) ? exactDuration : 200,
+        timestamp: Date.now()
+      };
+      
+      logsList.unshift(newEntry);
+      
+      if (logsList.length > 500) {
+        logsList = logsList.slice(0, 500);
+      }
+      
+      localStorage.setItem(key, JSON.stringify(logsList));
+      console.log(`[SYS.PLAY_LOGGER] Track logged successfully: "${cleanTitle}"`);
+    } catch (e) {
+      console.error("Failed to log play event:", e);
+    }
+  };
+
+  const playTrack = async (track, forceNoCrossfade = false) => {
     setIsLoading(true);
     initWebAudio();
     
     try {
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
-      }
+      const activeAudio = activeAudioRef.current || audioRef.current;
+      const inactiveAudio = activeAudio === audioRef.current ? audioRef2.current : audioRef.current;
+      const activeGain = activeAudio === audioRef.current ? gainNode1.current : gainNode2.current;
+      const inactiveGain = activeAudio === audioRef.current ? gainNode2.current : gainNode1.current;
       
       const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
         headers: { Authorization: `Bearer ${accessToken}` }
@@ -1045,8 +1542,15 @@ function App() {
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
       
+      setCurrentBlob(blob);
+      
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
       setAudioUrl(objectUrl);
       setCurrentTrack(track);
+      playLoggedRef.current = false;
+      fetchLyrics(track, accessToken);
       
       // 初期メタデータ設定（フォールバック用）
       const cleanTitle = track.name.replace(/\.[^/.]+$/, "");
@@ -1087,32 +1591,149 @@ function App() {
               console.warn('ID3タグ読み込み失敗:', error);
             }
           });
-        } else {
-          console.warn('jsmediatagsがグローバルスコープに見つかりません');
         }
       } catch (e) {
         console.warn('jsmediatags起動エラー:', e);
       }
       
-      if (audioRef.current) {
-        audioRef.current.src = objectUrl;
-        audioRef.current.load();
-        
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              setIsPlaying(true);
-            })
-            .catch(err => {
-              console.error('再生エラー:', err);
-              setIsPlaying(false);
-            });
-        }
+      // 他方の音声要素を完全に停止させる
+      inactiveAudio.pause();
+      inactiveAudio.currentTime = 0;
+      
+      // ゲインコントロールの設定
+      if (gainNode1.current && gainNode2.current) {
+        const time = audioContextRef.current.currentTime;
+        activeGain.gain.setValueAtTime(1.0, time);
+        inactiveGain.gain.setValueAtTime(0.0, time);
       }
+      
+      activeAudio.src = objectUrl;
+      activeAudio.playbackRate = playbackSpeed;
+      activeAudio.load();
+      
+      const playPromise = activeAudio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch(err => {
+            console.error('再生エラー:', err);
+            setIsPlaying(false);
+          });
+      }
+      
+      // ロックの初期化
+      isCrossfadingRef.current = false;
+      
     } catch (err) {
       addToast('曲のロード中にエラーが発生しました: ' + err.message, 'error');
       setIsPlaying(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const playTrackWithCrossfade = async (track) => {
+    setIsLoading(true);
+    initWebAudio();
+    
+    try {
+      const activeAudio = activeAudioRef.current || audioRef.current;
+      const inactiveAudio = activeAudio === audioRef.current ? audioRef2.current : audioRef.current;
+      const activeGain = activeAudio === audioRef.current ? gainNode1.current : gainNode2.current;
+      const inactiveGain = activeAudio === audioRef.current ? gainNode2.current : gainNode1.current;
+      
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      
+      if (!res.ok) throw new Error('オーディオデータのダウンロードに失敗しました');
+      
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      
+      setCurrentBlob(blob);
+      setCurrentTrack(track);
+      playLoggedRef.current = false;
+      fetchLyrics(track, accessToken);
+      
+      // 初期メタデータ設定（フォールバック用）
+      const cleanTitle = track.name.replace(/\.[^/.]+$/, "");
+      setTrackMetadata({
+        title: cleanTitle,
+        artist: 'Google Drive 音源',
+        album: 'マイドライブ',
+        coverUrl: ''
+      });
+
+      // ID3タグ解析 (非同期)
+      try {
+        const jsmediatags = window.jsmediatags;
+        if (jsmediatags) {
+          jsmediatags.read(blob, {
+            onSuccess: (tag) => {
+              const tags = tag.tags;
+              let coverUrl = '';
+              
+              if (tags.picture) {
+                const { data, format } = tags.picture;
+                let base64String = '';
+                const len = data.length;
+                for (let i = 0; i < len; i++) {
+                  base64String += String.fromCharCode(data[i]);
+                }
+                coverUrl = `data:${format};base64,${window.btoa(base64String)}`;
+              }
+
+              setTrackMetadata({
+                title: tags.title || cleanTitle,
+                artist: tags.artist || 'Google Drive 音源',
+                album: tags.album || 'マイドライブ',
+                coverUrl: coverUrl
+              });
+            }
+          });
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      
+      // フェード用の準備
+      inactiveAudio.src = objectUrl;
+      inactiveAudio.playbackRate = playbackSpeed;
+      inactiveAudio.load();
+      
+      const time = audioContextRef.current.currentTime;
+      
+      // フェードスケジュール
+      inactiveGain.gain.setValueAtTime(0.0, time);
+      inactiveGain.gain.linearRampToValueAtTime(1.0, time + crossfadeDuration);
+      
+      activeGain.gain.setValueAtTime(activeGain.gain.value, time);
+      activeGain.gain.linearRampToValueAtTime(0.0, time + crossfadeDuration);
+      
+      await inactiveAudio.play();
+      setIsPlaying(true);
+      
+      // アクティブオーディオ要素の切り替え
+      activeAudioRef.current = inactiveAudio;
+      
+      // 旧音声のクリーンアップ処理（クロスフェード秒数後）
+      setTimeout(() => {
+        activeAudio.pause();
+        activeAudio.currentTime = 0;
+        
+        if (audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+        }
+        setAudioUrl(objectUrl);
+        isCrossfadingRef.current = false;
+      }, crossfadeDuration * 1000);
+      
+    } catch (err) {
+      addToast('クロスフェード遷移中にエラーが発生しました: ' + err.message, 'error');
+      isCrossfadingRef.current = false;
     } finally {
       setIsLoading(false);
     }
@@ -1213,69 +1834,102 @@ function App() {
     }
   };
 
-  const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      setTrackProgress(audioRef.current.currentTime);
-    }
-  };
-
-  const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      setTrackDuration(audioRef.current.duration);
-    }
-  };
-
-  const handleAudioEnded = () => {
-    if (repeatMode === 'one') {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play()
-          .then(() => setIsPlaying(true))
-          .catch(err => console.error(err));
+  const handleTimeUpdate = (e) => {
+    const activeAudio = activeAudioRef.current || audioRef.current;
+    if (e.target === activeAudio) {
+      setTrackProgress(e.target.currentTime);
+      
+      // 再生履歴ログの記録（30秒以上、または半分の再生で記録）
+      if (!playLoggedRef.current && currentTrack && e.target.duration > 0) {
+        const threshold = Math.min(30, e.target.duration * 0.5);
+        if (e.target.currentTime >= threshold) {
+          playLoggedRef.current = true;
+          logPlayEvent(currentTrack, trackMetadata, e.target.duration);
+        }
       }
-    } else {
-      playNextTrack();
+      
+      // 自動クロスフェードの検出
+      if (
+        !isCrossfadingRef.current && 
+        crossfadeDuration > 0 &&
+        repeatMode !== 'one' && // 1曲リピート時はクロスフェードしない
+        e.target.duration > 0 &&
+        e.target.duration - e.target.currentTime <= crossfadeDuration
+      ) {
+        isCrossfadingRef.current = true;
+        playNextTrack(false);
+      }
     }
   };
 
-  const playNextTrack = () => {
-    // キューに曲がある場合はキューから再生
-    if (playQueue.length > 0) {
-      const nextTrack = playQueue[0];
-      setPlayQueue(prev => prev.slice(1));
-      playTrack(nextTrack);
-      return;
+  const handleLoadedMetadata = (e) => {
+    const activeAudio = activeAudioRef.current || audioRef.current;
+    if (e.target === activeAudio) {
+      setTrackDuration(e.target.duration);
     }
+  };
 
-    if (displayTracks.length === 0 || !currentTrack) return;
+  const handleAudioEnded = (e) => {
+    const activeAudio = activeAudioRef.current || audioRef.current;
+    if (e.target !== activeAudio) return;
     
     if (repeatMode === 'one') {
-      playTrack(currentTrack);
-      return;
+      e.target.currentTime = 0;
+      e.target.play()
+        .then(() => setIsPlaying(true))
+        .catch(err => console.error(err));
+    } else {
+      playNextTrack(true); // クロスフェードはすでに完了しているため forceNoCrossfade = true
     }
+  };
 
-    const currentIndex = displayTracks.findIndex(t => t.id === currentTrack.id);
+  const playNextTrack = (forceNoCrossfade = false) => {
+    let nextTrack = null;
+    let newQueue = [...playQueue];
     
-    if (isShuffle) {
-      if (displayTracks.length > 1) {
-        let randomIndex;
-        do {
-          randomIndex = Math.floor(Math.random() * displayTracks.length);
-        } while (randomIndex === currentIndex);
-        playTrack(displayTracks[randomIndex]);
+    if (newQueue.length > 0) {
+      nextTrack = newQueue[0];
+      newQueue = newQueue.slice(1);
+    } else if (displayTracks.length > 0 && currentTrack) {
+      const currentIndex = displayTracks.findIndex(t => t.id === currentTrack.id);
+      if (isShuffle) {
+        if (displayTracks.length > 1) {
+          let randomIndex;
+          do {
+            randomIndex = Math.floor(Math.random() * displayTracks.length);
+          } while (randomIndex === currentIndex);
+          nextTrack = displayTracks[randomIndex];
+        } else {
+          nextTrack = displayTracks[0];
+        }
       } else {
-        playTrack(displayTracks[0]);
+        if (currentIndex !== -1 && currentIndex < displayTracks.length - 1) {
+          nextTrack = displayTracks[currentIndex + 1];
+        } else if (repeatMode === 'all') {
+          nextTrack = displayTracks[0];
+        }
+      }
+    }
+    
+    if (nextTrack) {
+      if (newQueue.length !== playQueue.length) {
+        setPlayQueue(newQueue);
+      }
+      
+      if (!forceNoCrossfade && crossfadeDuration > 0 && currentTrack) {
+        playTrackWithCrossfade(nextTrack);
+      } else {
+        playTrack(nextTrack, true);
       }
     } else {
-      if (currentIndex !== -1 && currentIndex < displayTracks.length - 1) {
-        playTrack(displayTracks[currentIndex + 1]);
-      } else if (repeatMode === 'all') {
-        playTrack(displayTracks[0]);
+      if (repeatMode === 'one' && currentTrack) {
+        playTrack(currentTrack);
       } else {
         setIsPlaying(false);
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.currentTime = 0;
+        const activeAudio = activeAudioRef.current || audioRef.current;
+        if (activeAudio) {
+          activeAudio.pause();
+          activeAudio.currentTime = 0;
         }
       }
     }
@@ -1284,6 +1938,7 @@ function App() {
   const playPrevTrack = () => {
     if (displayTracks.length === 0 || !currentTrack) return;
     const currentIndex = displayTracks.findIndex(t => t.id === currentTrack.id);
+    let prevTrack = null;
     
     if (isShuffle) {
       if (displayTracks.length > 1) {
@@ -1291,27 +1946,32 @@ function App() {
         do {
           randomIndex = Math.floor(Math.random() * displayTracks.length);
         } while (randomIndex === currentIndex);
-        playTrack(displayTracks[randomIndex]);
+        prevTrack = displayTracks[randomIndex];
       } else {
-        playTrack(displayTracks[0]);
+        prevTrack = displayTracks[0];
       }
     } else {
       if (currentIndex > 0) {
-        playTrack(displayTracks[currentIndex - 1]);
+        prevTrack = displayTracks[currentIndex - 1];
       } else if (repeatMode === 'all') {
-        playTrack(displayTracks[displayTracks.length - 1]);
+        prevTrack = displayTracks[displayTracks.length - 1];
       }
+    }
+    
+    if (prevTrack) {
+      playTrack(prevTrack, true);
     }
   };
 
   const handlePlayPauseToggle = () => {
     initWebAudio();
-    if (audioRef.current) {
+    const activeAudio = activeAudioRef.current || audioRef.current;
+    if (activeAudio) {
       if (isPlaying) {
-        audioRef.current.pause();
+        activeAudio.pause();
         setIsPlaying(false);
       } else {
-        audioRef.current.play()
+        activeAudio.play()
           .then(() => setIsPlaying(true))
           .catch(err => console.error(err));
       }
@@ -1319,8 +1979,9 @@ function App() {
   };
 
   const handleSeek = (newTime) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = newTime;
+    const activeAudio = activeAudioRef.current || audioRef.current;
+    if (activeAudio) {
+      activeAudio.currentTime = newTime;
       setTrackProgress(newTime);
     }
   };
@@ -1635,6 +2296,7 @@ function App() {
             )}
 
             <Bot className="toggle-icon" size={24} onClick={toggleAIDJ} title="Toggle AI DJ" />
+            <BarChart3 className="toggle-icon" size={24} onClick={toggleStats} title="Listening Stats Console" />
             <Settings className="toggle-icon" size={24} onClick={toggleSettings} title="Settings" />
             
             {userProfile ? (
@@ -1652,6 +2314,14 @@ function App() {
 
         <audio 
           ref={audioRef}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={handleAudioEnded}
+          crossOrigin="anonymous"
+        />
+
+        <audio 
+          ref={audioRef2}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={handleAudioEnded}
@@ -1974,6 +2644,76 @@ function App() {
                 </p>
               </div>
 
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--neon-pink)', fontSize: '0.9rem', fontFamily: 'Orbitron' }}>
+                  クロスフェード時間 [CROSSFADE: {crossfadeDuration}s]
+                </label>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="10" 
+                  value={crossfadeDuration} 
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setCrossfadeDuration(val);
+                    localStorage.setItem('cg_crossfade_duration', val);
+                  }}
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--neon-pink)',
+                    cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.05)'
+                  }}
+                />
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.4' }}>
+                  曲の自動切り替わり時にフェードイン/フェードアウトする秒数を指定します（0秒で無効化）。
+                </p>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--neon-pink)', fontSize: '0.9rem', fontFamily: 'Orbitron' }}>
+                  システムテーマ [SYS.THEME]
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '5px' }}>
+                  {[
+                    { id: 'neon', name: 'Cyber Neon', color: '#00f3ff' },
+                    { id: 'vaporwave', name: 'Vaporwave', color: '#ff00ff' },
+                    { id: 'hacker', name: 'Terminal Hacker', color: '#00ff00' },
+                    { id: 'outrun', name: 'Outrun Sunset', color: '#ff5e00' }
+                  ].map(t => {
+                    const isSelected = currentTheme === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setCurrentTheme(t.id);
+                          addToast(`🤖 THEME CHANGED TO: ${t.name.toUpperCase()}`, 'sys');
+                        }}
+                        style={{
+                          background: isSelected ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.5)',
+                          border: isSelected ? `2px solid ${t.color}` : '1px solid var(--border-color)',
+                          color: isSelected ? '#fff' : 'var(--text-muted)',
+                          borderRadius: '6px',
+                          padding: '8px 4px',
+                          fontSize: '0.75rem',
+                          fontFamily: 'var(--font-mono)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          transition: 'all 0.2s ease',
+                          boxShadow: isSelected ? `0 0 10px ${t.color}44` : 'none'
+                        }}
+                      >
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: t.color, display: 'inline-block', boxShadow: `0 0 5px ${t.color}` }} />
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button 
                   className="play-generated-btn" 
@@ -2003,6 +2743,10 @@ function App() {
               )}
             </div>
           </div>
+        )}
+
+        {showStats && (
+          <StatsConsole userProfile={userProfile} onClose={() => setShowStats(false)} isAsmrMode={isAsmrMode} />
         )}
 
         {isAsmrMode && showAsmrPanel && (
@@ -2118,6 +2862,8 @@ function App() {
         setIsPlaying={handlePlayPauseToggle} 
         toggleEq={toggleEQ} 
         currentTrack={currentTrack}
+        onShareClick={() => setShowShareModal(true)}
+        currentBlob={currentBlob}
         trackMetadata={trackMetadata}
         progress={trackProgress}
         duration={trackDuration}
@@ -2136,6 +2882,14 @@ function App() {
             addToast('音楽を同期して、再生を開始してからクリックしてください', 'info');
           }
         }}
+        volume={volume}
+        onVolumeChange={(val) => {
+          setVolume(val);
+          if (masterGainNodeRef.current && audioContextRef.current) {
+            masterGainNodeRef.current.gain.setValueAtTime(val, audioContextRef.current.currentTime);
+          }
+        }}
+        isAsmrMode={isAsmrMode}
       />
 
       {/* アプリ内別画面（AIDJ, EQ, 設定パネル）遷移時に右下に出現する浮遊ホログラムミニプレイヤー */}
@@ -2166,7 +2920,10 @@ function App() {
           isPlaying={isPlaying}
           setIsPlaying={handlePlayPauseToggle}
           currentTrack={currentTrack}
+          onShareClick={() => setShowShareModal(true)}
+          currentBlob={currentBlob}
           trackMetadata={trackMetadata}
+          currentLyrics={currentLyrics}
           progress={trackProgress}
           duration={trackDuration}
           onSeek={handleSeek}
@@ -2184,6 +2941,31 @@ function App() {
           onEqChange={handleEqChange}
           onApplyPreset={applyEqPreset}
           isAsmrMode={isAsmrMode}
+          volume={volume}
+          onVolumeChange={(val) => {
+            setVolume(val);
+            if (masterGainNodeRef.current && audioContextRef.current) {
+              masterGainNodeRef.current.gain.setValueAtTime(val, audioContextRef.current.currentTime);
+            }
+          }}
+          isReverbOn={isReverbOn}
+          onToggleReverb={(isOn) => { setIsReverbOn(isOn); updateReverb(isOn, reverbMix); }}
+          reverbMix={reverbMix}
+          onReverbMixChange={(val) => { setReverbMix(val); updateReverb(isReverbOn, val); }}
+          isDelayOn={isDelayOn}
+          onToggleDelay={(isOn) => { setIsDelayOn(isOn); updateDelay(isOn, delayTime, delayFeedback); }}
+          delayTime={delayTime}
+          onDelayTimeChange={(val) => { setDelayTime(val); updateDelay(isDelayOn, val, delayFeedback); }}
+          delayFeedback={delayFeedback}
+          onDelayFeedbackChange={(val) => { setDelayFeedback(val); updateDelay(isDelayOn, delayTime, val); }}
+          isFilterOn={isFilterOn}
+          onToggleFilter={(isOn) => { setIsFilterOn(isOn); updateFilters(isOn, lowpassFreq, highpassFreq); }}
+          lowpassFreq={lowpassFreq}
+          onLowpassFreqChange={(val) => { setLowpassFreq(val); updateFilters(isFilterOn, val, highpassFreq); }}
+          highpassFreq={highpassFreq}
+          onHighpassFreqChange={(val) => { setHighpassFreq(val); updateFilters(isFilterOn, lowpassFreq, val); }}
+          playbackSpeed={playbackSpeed}
+          onPlaybackSpeedChange={(val) => { updatePlaybackSpeed(val); }}
         />
       )}
 
@@ -2325,6 +3107,17 @@ function App() {
       )}
       {/* サイバーパンク・トースト通知 */}
       <CyberToast toasts={toasts} removeToast={removeToast} />
+
+      {/* 共有モーダルHUD */}
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        currentTrack={currentTrack}
+        selectedPlaylistId={selectedPlaylistId}
+        playlists={playlists}
+        currentTheme={currentTheme}
+        addToast={addToast}
+      />
     </div>
   );
 }

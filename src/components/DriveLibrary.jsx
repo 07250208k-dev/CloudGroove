@@ -298,8 +298,78 @@ const DriveLibrary = ({
         </ul>
       </div>
 
+      {/* スマートプレイリスト (AI.SYSTEM) セクション */}
+      {isSyncActive && (
+        <div className="library-section" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <Sparkles size={15} style={{ color: isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-purple, #b500ff)' }} />
+            <h2 style={{ margin: 0, textShadow: isAsmrMode ? '0 0 5px rgba(140, 0, 255, 0.2)' : '0 0 5px rgba(181, 0, 255, 0.2)' }}>
+              {isAsmrMode ? 'AI.SYSTEM 禅スマートリスト' : 'AI.SYSTEM スマートリスト'}
+            </h2>
+          </div>
+          
+          <ul className="playlist-tree" style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
+            {(isAsmrMode ? [
+              { id: 'sp-asmr-recent', name: '⚡ 最近追加されたASMR', desc: 'Recently Synced ASMR', color: 'var(--neon-asmr-emerald, #00ffcc)' },
+              { id: 'sp-asmr-heavy', name: '🔥 ASMRヘビロテ', desc: 'ASMR Heavy Rotation', color: 'var(--neon-asmr-purple, #8c00ff)' },
+              { id: 'sp-asmr-ear', name: '👂 耳かき・マッサージ', desc: 'Ear Cleaning & Massage', color: 'var(--neon-asmr-emerald, #00ffcc)' },
+              { id: 'sp-asmr-whisper', name: '💬 ささやき・音声', desc: 'Whisper & Voice Tales', color: 'var(--neon-asmr-purple, #8c00ff)' },
+              { id: 'sp-asmr-nature', name: '☔ 自然音・環境音', desc: 'Nature Rain & Ambient', color: 'var(--neon-asmr-emerald, #00ffcc)' }
+            ] : [
+              { id: 'sp-recent', name: '⚡ 最近同期された曲', desc: 'Recently Synchronized', color: 'var(--neon-cyan)' },
+              { id: 'sp-heavy', name: '🔥 ヘビーローテーション', desc: 'Heavy Rotation', color: 'var(--neon-pink)' },
+              { id: 'sp-rediscover', name: '💤 隠れた名曲 (発掘)', desc: 'Rediscovery Pool', color: 'var(--neon-cyan)' },
+              { id: 'sp-chill', name: '🌙 チル & ローファイ', desc: 'Chillout & Ambient', color: 'var(--neon-cyan)' },
+              { id: 'sp-energy', name: '⚡ ハイエナジー / ドライブ', desc: 'Cyberpunk Beats', color: 'var(--neon-pink)' },
+              { id: 'sp-instrumental', name: '🎹 インストゥルメンタル', desc: 'Karaoke / Inst', color: 'var(--neon-cyan)' }
+            ]).map(sp => {
+              const isActive = selectedPlaylistId === sp.id;
+              const activeColor = sp.color || (isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-purple, #b500ff)');
+              return (
+                <li
+                  key={sp.id}
+                  onClick={() => onPlaylistSelect(sp.id)}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: '6px 10px',
+                    borderRadius: '4px',
+                    marginBottom: '4px',
+                    transition: 'all 0.2s ease',
+                    border: isActive 
+                      ? `1px solid ${activeColor}` 
+                      : '1px solid transparent',
+                    background: isActive 
+                      ? 'rgba(255, 255, 255, 0.03)' 
+                      : 'transparent',
+                    boxShadow: isActive ? `0 0 8px ${activeColor}` : 'none'
+                  }}
+                >
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: isActive ? 'bold' : 'normal',
+                    color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
+                  }}>
+                    {sp.name}
+                  </span>
+                  <span style={{
+                    fontSize: '0.55rem',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'monospace',
+                    marginTop: '1px'
+                  }}>
+                    {sp.desc}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {/* プレイリスト セクション */}
-      <div className="library-section" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px' }}>
+      <div className="library-section" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h2><ListMusic size={16} /> プレイリスト</h2>
           <div style={{ display: 'flex', gap: '8px' }}>

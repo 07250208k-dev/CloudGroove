@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, X, MonitorPlay, Sparkles } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, X, MonitorPlay, Sparkles, SlidersHorizontal, Activity, Share2 } from 'lucide-react';
+import WaveformSeekbar from './WaveformSeekbar';
 
 const FullScreenPlayer = ({
   isPlaying,
   setIsPlaying,
   currentTrack,
+  currentBlob = null,
   trackMetadata = null,
   progress,
   duration,
@@ -15,6 +17,7 @@ const FullScreenPlayer = ({
   analyser,
   onClose,
   onTogglePiP,
+  onShareClick,
   isShuffle,
   onToggleShuffle,
   repeatMode,
@@ -22,11 +25,66 @@ const FullScreenPlayer = ({
   eqGains,
   onEqChange,
   onApplyPreset,
-  isAsmrMode = false
+  isAsmrMode = false,
+  volume = 0.7,
+  onVolumeChange,
+  isReverbOn = false,
+  onToggleReverb,
+  reverbMix = 30,
+  onReverbMixChange,
+  isDelayOn = false,
+  onToggleDelay,
+  delayTime = 0.3,
+  onDelayTimeChange,
+  delayFeedback = 40,
+  onDelayFeedbackChange,
+  isFilterOn = false,
+  onToggleFilter,
+  lowpassFreq = 8000,
+  onLowpassFreqChange,
+  highpassFreq = 20,
+  onHighpassFreqChange,
+  playbackSpeed = 1.0,
+  onPlaybackSpeedChange,
+  currentLyrics = []
 }) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
+  const lyricsContainerRef = useRef(null);
   const [bassScale, setBassScale] = useState(1);
+  const [activeTab, setActiveTab] = useState('eq'); // 'eq' | 'fx' | 'lyrics'
+
+  // 歌詞が存在する場合、自動的に歌詞タブに切り替える
+  useEffect(() => {
+    if (currentLyrics && currentLyrics.length > 0) {
+      setActiveTab('lyrics');
+    }
+  }, [currentLyrics]);
+
+  // 現在進行中の歌詞のインデックスを見つける
+  let activeLyricIndex = -1;
+  if (currentLyrics && currentLyrics.length > 0) {
+    for (let i = 0; i < currentLyrics.length; i++) {
+      if (currentLyrics[i].time <= progress) {
+        activeLyricIndex = i;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // 進行中の歌詞をスムーズにスクロール
+  useEffect(() => {
+    if (activeTab === 'lyrics' && lyricsContainerRef.current && activeLyricIndex !== -1) {
+      const activeEl = lyricsContainerRef.current.querySelector(`[data-index="${activeLyricIndex}"]`);
+      if (activeEl) {
+        activeEl.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }
+    }
+  }, [activeLyricIndex, activeTab]);
 
   useEffect(() => {
     // ESCキーで閉じる
@@ -64,6 +122,32 @@ const FullScreenPlayer = ({
     const draw = () => {
       if (!ctx || !canvas) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 動的カラー定義（テーマ対応）
+      const styles = window.getComputedStyle(document.documentElement);
+      const cyanVar = styles.getPropertyValue('--neon-cyan').trim() || '#00f3ff';
+      const pinkVar = styles.getPropertyValue('--neon-pink').trim() || '#ff007f';
+      const purpleVar = styles.getPropertyValue('--neon-purple').trim() || '#b500ff';
+
+      const hexToRgbStr = (hex) => {
+        const c = hex.replace('#', '').trim();
+        if (c.length === 3) {
+          const r = parseInt(c[0] + c[0], 16);
+          const g = parseInt(c[1] + c[1], 16);
+          const b = parseInt(c[2] + c[2], 16);
+          return `${r}, ${g}, ${b}`;
+        } else if (c.length === 6) {
+          const r = parseInt(c.substring(0, 2), 16);
+          const g = parseInt(c.substring(2, 4), 16);
+          const b = parseInt(c.substring(4, 6), 16);
+          return `${r}, ${g}, ${b}`;
+        }
+        return '0, 243, 255'; // fallback
+      };
+
+      const rgbCyan = hexToRgbStr(cyanVar);
+      const rgbPink = hexToRgbStr(pinkVar);
+      const rgbPurple = hexToRgbStr(purpleVar);
 
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
@@ -124,7 +208,7 @@ const FullScreenPlayer = ({
             decay: decay,
             color: isAsmrMode
               ? (Math.random() > 0.5 ? '0, 255, 204' : '140, 0, 255')
-              : (Math.random() > 0.5 ? '0, 243, 255' : '255, 0, 127') // シアンかネオンピンク
+              : (Math.random() > 0.5 ? rgbCyan : rgbPink) // テーマ別のカラー
           });
         }
       }
@@ -183,11 +267,14 @@ const FullScreenPlayer = ({
           }
         } else {
           if (percent < 0.33) {
-            r = 0; g = 243; b = 255; // シアン
+            const parts = rgbCyan.split(',').map(Number);
+            r = parts[0]; g = parts[1]; b = parts[2];
           } else if (percent < 0.66) {
-            r = 181; g = 0; b = 255; // パープル
+            const parts = rgbPurple.split(',').map(Number);
+            r = parts[0]; g = parts[1]; b = parts[2];
           } else {
-            r = 255; g = 0; b = 127; // ピンク
+            const parts = rgbPink.split(',').map(Number);
+            r = parts[0]; g = parts[1]; b = parts[2];
           }
         }
 
@@ -211,7 +298,7 @@ const FullScreenPlayer = ({
 
       // サイバーな「グリッド円」を周囲に描く
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'rgba(0, 243, 255, 0.15)';
+      ctx.strokeStyle = `rgba(${rgbCyan}, 0.15)`;
       ctx.lineWidth = 1;
       
       ctx.beginPath();
@@ -239,18 +326,6 @@ const FullScreenPlayer = ({
     };
   }, [isPlaying, analyser, isAsmrMode]);
 
-  const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
-
-  const handleProgressClick = (e) => {
-    if (duration === 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const clickPercent = clickX / width;
-    const newTime = clickPercent * duration;
-    onSeek(newTime);
-  };
-
   return (
     <div className={`fullscreen-overlay ${isAsmrMode ? 'asmr-theme' : ''}`}>
       {/* サイバーなグリッド背景 */}
@@ -264,6 +339,10 @@ const FullScreenPlayer = ({
         </div>
 
         <div className="fs-action-buttons" style={{ display: 'flex', gap: '15px' }}>
+          <button className="fs-icon-btn glow-cyan" onClick={onShareClick} title="共有リンク確立 [SYS.SHARE]" style={{ borderColor: 'var(--neon-pink)', boxShadow: '0 0 15px rgba(255, 0, 127, 0.25)' }}>
+            <Share2 size={22} style={{ color: 'var(--neon-pink)' }} />
+            <span style={{ fontSize: '0.75rem', fontFamily: 'Orbitron', marginLeft: '5px', color: 'var(--neon-pink)' }}>SHARE</span>
+          </button>
           <button className="fs-icon-btn glow-cyan" onClick={onTogglePiP} title="デスクトップへ投射 (PiP)">
             <MonitorPlay size={22} />
             <span style={{ fontSize: '0.75rem', fontFamily: 'Orbitron', marginLeft: '5px' }}>PIP</span>
@@ -302,115 +381,474 @@ const FullScreenPlayer = ({
           </div>
         </div>
 
-        {/* 左側：システムステータスログ（サイバー演出）＆ イコライザーHUD */}
+        {/* ホログラム・カラオケ字幕オーバーレイ */}
+        {currentLyrics && currentLyrics.length > 0 && activeLyricIndex !== -1 && (
+          <div style={{
+            position: 'absolute',
+            bottom: '30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+            textAlign: 'center',
+            zIndex: 10,
+            width: '80%',
+            maxWidth: '600px',
+            pointerEvents: 'none',
+            fontFamily: '"Orbitron", monospace',
+            textTransform: 'uppercase'
+          }}>
+            {/* 現在の歌詞 (主歌詞: 拡大 + 強力なネオン発光) */}
+            <div style={{
+              fontSize: '1.4rem',
+              fontWeight: 'bold',
+              color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)',
+              textShadow: isAsmrMode 
+                ? '0 0 10px rgba(0, 255, 204, 0.8), 0 0 20px rgba(0, 255, 204, 0.4)' 
+                : '0 0 10px rgba(255, 0, 127, 0.8), 0 0 20px rgba(255, 0, 127, 0.4)',
+              letterSpacing: '1px',
+              animation: 'pulse-fast 0.6s infinite alternate',
+              lineHeight: '1.4'
+            }}>
+              {currentLyrics[activeLyricIndex].text}
+            </div>
+
+            {/* 次の歌詞 (半透明) */}
+            {activeLyricIndex + 1 < currentLyrics.length && (
+              <div style={{
+                fontSize: '0.9rem',
+                color: 'rgba(255, 255, 255, 0.35)',
+                textShadow: '0 0 5px rgba(255, 255, 255, 0.1)',
+                letterSpacing: '0.5px',
+                lineHeight: '1.3'
+              }}>
+                {currentLyrics[activeLyricIndex + 1].text}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 左側：グラフィックイコライザー or エフェクトコンソール HUD */}
         <div className="fs-side-panel left-panel" style={{ 
           display: 'flex', 
           flexDirection: 'column', 
-          gap: '15px',
+          gap: '12px',
           borderLeft: `3px solid ${isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)'}`
         }}>
-          <div>
-            <h3>SYSTEM ANALYSIS</h3>
-            <div className="system-log" style={{ fontSize: '0.75rem', height: '110px' }}>
-              <p className="neon-text-cyan">&gt; AUDIO BUFFER INITIALIZED</p>
-              <p>&gt; BITRATE: 320KBPS / STEADY</p>
-              <p className="neon-text-pink">&gt; BEAT DETECTOR STATUS: OK</p>
-              <p style={{
-                color: eqGains.some(g => g !== 0) ? 'var(--neon-cyan)' : 'var(--text-muted)',
-                animation: eqGains.some(g => g !== 0) ? 'pulse-fast 1s infinite alternate' : 'none'
-              }}>
-                &gt; EQ STATUS: {eqGains.some(g => g !== 0) ? 'ACTIVE' : 'BYPASS (FLAT)'}
-              </p>
-              <p className="neon-text-green">&gt; SPECTRUM LOCK: ACTIVE</p>
-            </div>
+          {/* タブ切り替えセレクター */}
+          <div style={{ display: 'flex', borderBottom: '1px solid rgba(0, 243, 255, 0.15)', paddingBottom: '5px', gap: '8px' }}>
+            <button 
+              onClick={() => setActiveTab('lyrics')}
+              style={{
+                flex: 1,
+                padding: '6px 0',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'lyrics' ? `2px solid ${isAsmrMode ? '#8c00ff' : '#00f3ff'}` : '2px solid transparent',
+                color: activeTab === 'lyrics' ? '#fff' : 'var(--text-muted)',
+                fontFamily: 'Orbitron',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontWeight: 'bold',
+                letterSpacing: '1px'
+              }}
+            >
+              [LYRICS]
+            </button>
+            <button 
+              onClick={() => setActiveTab('eq')}
+              style={{
+                flex: 1,
+                padding: '6px 0',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'eq' ? `2px solid ${isAsmrMode ? '#00ffcc' : '#00f3ff'}` : '2px solid transparent',
+                color: activeTab === 'eq' ? '#fff' : 'var(--text-muted)',
+                fontFamily: 'Orbitron',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontWeight: 'bold',
+                letterSpacing: '1px'
+              }}
+            >
+              [GRAPHIC EQ]
+            </button>
+            <button 
+              onClick={() => setActiveTab('fx')}
+              style={{
+                flex: 1,
+                padding: '6px 0',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'fx' ? `2px solid ${isAsmrMode ? '#8c00ff' : '#ff007f'}` : '2px solid transparent',
+                color: activeTab === 'fx' ? '#fff' : 'var(--text-muted)',
+                fontFamily: 'Orbitron',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontWeight: 'bold',
+                letterSpacing: '1px'
+              }}
+            >
+              [FX CONSOLE]
+            </button>
           </div>
 
-          <div style={{ borderTop: '1px solid rgba(0, 243, 255, 0.2)', paddingTop: '15px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ fontSize: '0.85rem', color: 'var(--neon-cyan)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
-              <Sparkles size={14} /> HUD GRAPHIC EQ
-            </h3>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', flex: 1, padding: '0 5px', minHeight: '120px' }}>
-              {[60, 230, 910, 3600, 14000].map((freq, idx) => (
-                <div key={freq} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
-                  <input 
-                    type="range" 
-                    min="-12" 
-                    max="12" 
-                    value={eqGains[idx]} 
-                    onChange={(e) => onEqChange(idx, e.target.value)}
-                    style={{
-                      writingMode: 'vertical-lr', 
-                      direction: 'rtl', 
-                      height: '80px', 
-                      accentColor: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)', 
-                      cursor: 'ns-resize',
-                      backgroundColor: 'rgba(0,0,0,0.5)',
-                      outline: 'none'
-                    }} 
-                  />
-                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px', fontFamily: 'monospace' }}>
-                    {freq > 1000 ? `${freq/1000}k` : freq}
-                  </span>
-                  <span style={{ fontSize: '0.55rem', fontFamily: 'monospace', color: eqGains[idx] > 0 ? 'var(--neon-cyan)' : eqGains[idx] < 0 ? 'var(--neon-pink)' : '#666', marginTop: '2px' }}>
-                    {eqGains[idx] > 0 ? `+${eqGains[idx]}` : eqGains[idx]}
-                  </span>
+          {activeTab === 'lyrics' && (
+            <div 
+              ref={lyricsContainerRef}
+              style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '16px', 
+                flex: 1, 
+                overflowY: 'auto', 
+                padding: '20px 10px',
+                scrollBehavior: 'smooth',
+                maskImage: 'linear-gradient(to bottom, transparent 0%, white 15%, white 85%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, white 15%, white 85%, transparent 100%)',
+              }}
+            >
+              {currentLyrics && currentLyrics.length > 0 ? (
+                currentLyrics.map((line, idx) => {
+                  const isActive = idx === activeLyricIndex;
+                  return (
+                    <div
+                      key={idx}
+                      data-index={idx}
+                      onClick={() => onSeek(line.time)}
+                      style={{
+                        cursor: 'pointer',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        transition: 'all 0.3s ease',
+                        fontSize: isActive ? '1.05rem' : '0.85rem',
+                        fontWeight: isActive ? 'bold' : 'normal',
+                        color: isActive 
+                          ? (isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)') 
+                          : 'rgba(255,255,255,0.45)',
+                        background: isActive 
+                          ? (isAsmrMode ? 'rgba(0, 255, 204, 0.08)' : 'rgba(0, 243, 255, 0.08)')
+                          : 'transparent',
+                        textAlign: 'center',
+                        fontFamily: 'monospace',
+                        textShadow: isActive 
+                          ? (isAsmrMode ? '0 0 10px rgba(0, 255, 204, 0.6)' : '0 0 10px rgba(0, 243, 255, 0.6)')
+                          : 'none',
+                        border: isActive 
+                          ? `1px solid ${isAsmrMode ? 'rgba(0, 255, 204, 0.3)' : 'rgba(0, 243, 255, 0.3)'}` 
+                          : '1px solid transparent',
+                        transform: isActive ? 'scale(1.02)' : 'scale(1)'
+                      }}
+                    >
+                      {line.text}
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  color: 'var(--text-muted)',
+                  fontSize: '0.8rem',
+                  textAlign: 'center',
+                  gap: '10px'
+                }}>
+                  <span style={{ fontSize: '1.5rem' }}>🎤</span>
+                  <p>
+                    このトラックの歌詞が見つかりません。<br />
+                    G-Drive内の同じフォルダに「曲名.lrc」ファイルを配置すると自動同期されます。
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
+          )}
 
-            <div style={{ display: 'flex', gap: '5px', marginTop: '10px', flexWrap: 'wrap' }}>
-              <button 
-                onClick={() => onApplyPreset(isAsmrMode ? [-8, -2, 5, 8, 4] : [10, 5, -1, 0, 2])}
-                style={{
-                  flex: 1, 
-                  padding: '5px 0', 
-                  fontSize: '0.65rem', 
-                  backgroundColor: 'rgba(0,0,0,0.6)', 
-                  border: `1px solid ${isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)'}`, 
-                  color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                  fontFamily: 'Orbitron'
-                }}
-              >
-                {isAsmrMode ? 'WHISPER' : 'BASS'}
-              </button>
-              <button 
-                onClick={() => onApplyPreset(isAsmrMode ? [-12, -4, 2, 10, 12] : [-12, -3, 8, 4, -10])}
-                style={{
-                  flex: 1, 
-                  padding: '5px 0', 
-                  fontSize: '0.65rem', 
-                  backgroundColor: 'rgba(0,0,0,0.6)', 
-                  border: `1px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-cyan)'}`, 
-                  color: isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-cyan)',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                  fontFamily: 'Orbitron'
-                }}
-              >
-                {isAsmrMode ? 'CLEANING' : 'RADIO'}
-              </button>
-              <button 
-                onClick={() => onApplyPreset([0, 0, 0, 0, 0])}
-                style={{
-                  flex: '1 1 100%', 
-                  padding: '5px 0', 
-                  fontSize: '0.65rem', 
-                  backgroundColor: 'rgba(255,255,255,0.05)', 
-                  border: '1px solid rgba(255,255,255,0.15)', 
-                  color: '#fff',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                  fontFamily: 'Orbitron',
-                  marginTop: '5px'
-                }}
-              >
-                FLAT
-              </button>
+          {activeTab === 'eq' && (
+            /* ================= EQ TAB ================= */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
+              <div>
+                <h3>SYSTEM ANALYSIS</h3>
+                <div className="system-log" style={{ fontSize: '0.72rem', height: '95px' }}>
+                  <p className="neon-text-cyan">&gt; AUDIO BUFFER ACTIVE</p>
+                  <p>&gt; BITRATE: 320KBPS / STEADY</p>
+                  <p className="neon-text-pink">&gt; BEAT DETECTOR STATUS: OK</p>
+                  <p style={{
+                    color: eqGains.some(g => g !== 0) ? 'var(--neon-cyan)' : 'var(--text-muted)',
+                    animation: eqGains.some(g => g !== 0) ? 'pulse-fast 1s infinite alternate' : 'none'
+                  }}>
+                    &gt; EQ STATUS: {eqGains.some(g => g !== 0) ? 'ACTIVE' : 'BYPASS (FLAT)'}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(0, 243, 255, 0.1)', paddingTop: '10px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ fontSize: '0.8rem', color: 'var(--neon-cyan)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                  <Sparkles size={13} /> HUD GRAPHIC EQ
+                </h3>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', flex: 1, padding: '0 5px', minHeight: '110px' }}>
+                  {[60, 230, 910, 3600, 14000].map((freq, idx) => (
+                    <div key={freq} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
+                      <input 
+                        type="range" 
+                        min="-12" 
+                        max="12" 
+                        value={eqGains[idx]} 
+                        onChange={(e) => onEqChange(idx, e.target.value)}
+                        style={{
+                          writingMode: 'vertical-lr', 
+                          direction: 'rtl', 
+                          height: '75px', 
+                          accentColor: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)', 
+                          cursor: 'ns-resize',
+                          backgroundColor: 'rgba(0,0,0,0.5)',
+                          outline: 'none'
+                        }} 
+                      />
+                      <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '6px', fontFamily: 'monospace' }}>
+                        {freq > 1000 ? `${freq/1000}k` : freq}
+                      </span>
+                      <span style={{ fontSize: '0.5rem', fontFamily: 'monospace', color: eqGains[idx] > 0 ? 'var(--neon-cyan)' : eqGains[idx] < 0 ? 'var(--neon-pink)' : '#666', marginTop: '1px' }}>
+                        {eqGains[idx] > 0 ? `+${eqGains[idx]}` : eqGains[idx]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: '5px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  <button 
+                    onClick={() => onApplyPreset(isAsmrMode ? [-8, -2, 5, 8, 4] : [10, 5, -1, 0, 2])}
+                    style={{
+                      flex: 1, 
+                      padding: '4px 0', 
+                      fontSize: '0.6rem', 
+                      backgroundColor: 'rgba(0,0,0,0.6)', 
+                      border: `1px solid ${isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)'}`, 
+                      color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontFamily: 'Orbitron'
+                    }}
+                  >
+                    {isAsmrMode ? 'WHISPER' : 'BASS'}
+                  </button>
+                  <button 
+                    onClick={() => onApplyPreset(isAsmrMode ? [-12, -4, 2, 10, 12] : [-12, -3, 8, 4, -10])}
+                    style={{
+                      flex: 1, 
+                      padding: '4px 0', 
+                      fontSize: '0.6rem', 
+                      backgroundColor: 'rgba(0,0,0,0.6)', 
+                      border: `1px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-cyan)'}`, 
+                      color: isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-cyan)',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontFamily: 'Orbitron'
+                    }}
+                  >
+                    {isAsmrMode ? 'CLEANING' : 'RADIO'}
+                  </button>
+                  <button 
+                    onClick={() => onApplyPreset([0, 0, 0, 0, 0])}
+                    style={{
+                      flex: '1 1 100%', 
+                      padding: '4px 0', 
+                      fontSize: '0.6rem', 
+                      backgroundColor: 'rgba(255,255,255,0.05)', 
+                      border: '1px solid rgba(255,255,255,0.15)', 
+                      color: '#fff',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontFamily: 'Orbitron',
+                      marginTop: '3px'
+                    }}
+                  >
+                    FLAT
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeTab === 'fx' && (
+            /* ================= FX TAB ================= */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+              <h3 style={{ fontSize: '0.8rem', color: isAsmrMode ? 'var(--neon-asmr-purple)' : 'var(--neon-pink)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
+                <Activity size={13} /> SOUND FX CONSOLE
+              </h3>
+
+              {/* REVERB Residual Sound */}
+              <div style={{ background: 'rgba(5, 5, 8, 0.6)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '0.7rem', fontFamily: 'Orbitron', color: isReverbOn ? 'var(--neon-cyan)' : '#888', fontWeight: 'bold' }}>
+                    SPACE REVERB [宇宙残響]
+                  </span>
+                  <input 
+                    type="checkbox" 
+                    checked={isReverbOn} 
+                    onChange={(e) => onToggleReverb(e.target.checked)}
+                    style={{ accentColor: 'var(--neon-cyan)', cursor: 'pointer', width: '14px', height: '14px' }}
+                  />
+                </div>
+                {isReverbOn && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                      <span>WET MIX [残響音率]</span>
+                      <span>{reverbMix}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={reverbMix} 
+                      onChange={(e) => onReverbMixChange(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: 'var(--neon-cyan)', cursor: 'pointer' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* FEEDBACK DELAY */}
+              <div style={{ background: 'rgba(5, 5, 8, 0.6)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '0.7rem', fontFamily: 'Orbitron', color: isDelayOn ? 'var(--neon-pink)' : '#888', fontWeight: 'bold' }}>
+                    CYBER DELAY [回帰ディレイ]
+                  </span>
+                  <input 
+                    type="checkbox" 
+                    checked={isDelayOn} 
+                    onChange={(e) => onToggleDelay(e.target.checked)}
+                    style={{ accentColor: 'var(--neon-pink)', cursor: 'pointer', width: '14px', height: '14px' }}
+                  />
+                </div>
+                {isDelayOn && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                        <span>TIME [ディレイ時間]</span>
+                        <span>{delayTime.toFixed(1)}s</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.1" 
+                        max="1.0" 
+                        step="0.1" 
+                        value={delayTime} 
+                        onChange={(e) => onDelayTimeChange(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: 'var(--neon-pink)', cursor: 'pointer' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                        <span>FEEDBACK [フィードバック]</span>
+                        <span>{delayFeedback}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="80" 
+                        value={delayFeedback} 
+                        onChange={(e) => onDelayFeedbackChange(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: 'var(--neon-pink)', cursor: 'pointer' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* BIQUAD FILTER */}
+              <div style={{ background: 'rgba(5, 5, 8, 0.6)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '0.7rem', fontFamily: 'Orbitron', color: isFilterOn ? '#0f0' : '#888', fontWeight: 'bold' }}>
+                    HUD FILTER [高低音フィルター]
+                  </span>
+                  <input 
+                    type="checkbox" 
+                    checked={isFilterOn} 
+                    onChange={(e) => onToggleFilter(e.target.checked)}
+                    style={{ accentColor: '#0f0', cursor: 'pointer', width: '14px', height: '14px' }}
+                  />
+                </div>
+                {isFilterOn && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                        <span>LOWPASS [高音カット]</span>
+                        <span>{lowpassFreq}Hz</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="200" 
+                        max="20000" 
+                        step="200" 
+                        value={lowpassFreq} 
+                        onChange={(e) => onLowpassFreqChange(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: '#0f0', cursor: 'pointer' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                        <span>HIGHPASS [低音カット]</span>
+                        <span>{highpassFreq}Hz</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="20" 
+                        max="2000" 
+                        step="20" 
+                        value={highpassFreq} 
+                        onChange={(e) => onHighpassFreqChange(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: '#0f0', cursor: 'pointer' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* PLAYBACK SPEED */}
+              <div style={{ background: 'rgba(5, 5, 8, 0.6)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '0.7rem', fontFamily: 'Orbitron', color: playbackSpeed !== 1.0 ? 'var(--neon-cyan)' : '#888', fontWeight: 'bold' }}>
+                    SPEED FACTOR [速度: {playbackSpeed.toFixed(2)}x]
+                  </span>
+                  {playbackSpeed !== 1.0 && (
+                    <button 
+                      onClick={() => onPlaybackSpeedChange(1.0)}
+                      style={{
+                        padding: '1px 5px',
+                        fontSize: '0.55rem',
+                        fontFamily: 'Orbitron',
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        border: '1px solid var(--neon-cyan)',
+                        color: '#fff',
+                        borderRadius: '2px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      RESET
+                    </button>
+                  )}
+                </div>
+                <input 
+                  type="range" 
+                  min="0.5" 
+                  max="2.0" 
+                  step="0.05" 
+                  value={playbackSpeed} 
+                  onChange={(e) => onPlaybackSpeedChange(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--neon-cyan)', cursor: 'pointer' }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 右側：現在の楽曲情報 */}
@@ -477,19 +915,17 @@ const FullScreenPlayer = ({
       {/* 下部大型操作パネル */}
       <footer className="fs-footer" style={{ borderTop: `1px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-pink)'}` }}>
         <div className="fs-controls-container">
-          {/* 進捗バー */}
-          <div className="fs-progress-wrap">
+          {/* 波形シークバーの統合 */}
+          <div className="fs-progress-wrap" onClick={(e) => e.stopPropagation()}>
             <span className="time fs-time">{formatTime(progress)}</span>
-            <div className="fs-progress-bg" onClick={handleProgressClick}>
-              <div 
-                className="fs-progress-fill" 
-                style={{ 
-                  width: `${progressPercent}%`,
-                  background: isAsmrMode ? 'linear-gradient(90deg, var(--neon-asmr-emerald) 0%, var(--neon-asmr-purple) 100%)' : 'linear-gradient(90deg, var(--neon-cyan) 0%, var(--neon-pink) 100%)',
-                  boxShadow: `0 0 15px ${isAsmrMode ? 'var(--neon-asmr-emerald)' : 'var(--neon-pink)'}`
-                }}
-              ></div>
-            </div>
+            <WaveformSeekbar 
+              blob={currentBlob}
+              progress={progress}
+              duration={duration}
+              onSeek={onSeek}
+              formatTime={formatTime}
+              isAsmrMode={isAsmrMode}
+            />
             <span className="time fs-time">{formatTime(duration)}</span>
           </div>
 

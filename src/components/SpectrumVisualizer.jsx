@@ -30,6 +30,33 @@ const SpectrumVisualizer = ({ isPlaying, analyser = null, isAsmrMode = false, tr
     const draw = () => {
       if (!ctx || !canvas) return;
 
+      // 動的カラー定義（テーマ対応）
+      const styles = window.getComputedStyle(document.documentElement);
+      const cyanVar = styles.getPropertyValue('--neon-cyan').trim() || '#00f3ff';
+      const pinkVar = styles.getPropertyValue('--neon-pink').trim() || '#ff007f';
+
+      const hexToRgbStr = (hex) => {
+        const c = hex.replace('#', '').trim();
+        if (c.length === 3) {
+          const r = parseInt(c[0] + c[0], 16);
+          const g = parseInt(c[1] + c[1], 16);
+          const b = parseInt(c[2] + c[2], 16);
+          return `${r}, ${g}, ${b}`;
+        } else if (c.length === 6) {
+          const r = parseInt(c.substring(0, 2), 16);
+          const g = parseInt(c.substring(2, 4), 16);
+          const b = parseInt(c.substring(4, 6), 16);
+          return `${r}, ${g}, ${b}`;
+        }
+        return '0, 243, 255'; // fallback
+      };
+
+      const rgbCyan = hexToRgbStr(cyanVar);
+      const rgbPink = hexToRgbStr(pinkVar);
+
+      const cyanParts = rgbCyan.split(',').map(Number);
+      const pinkParts = rgbPink.split(',').map(Number);
+
       const barWidth = (canvas.width / bars) - 2;
       let x = 0;
 
@@ -135,13 +162,17 @@ const SpectrumVisualizer = ({ isPlaying, analyser = null, isAsmrMode = false, tr
           const percent = i / bars;
           let r, g, b;
           if (percent < 0.5) {
-            r = Math.floor(0 + (100 * percent));
-            g = Math.floor(243 - (100 * percent));
-            b = 255;
+            // Interpolate from Cyan (at percent = 0) towards Pink (at percent = 0.5)
+            const factor = percent * 2;
+            r = Math.floor(cyanParts[0] + (pinkParts[0] - cyanParts[0]) * factor);
+            g = Math.floor(cyanParts[1] + (pinkParts[1] - cyanParts[1]) * factor);
+            b = Math.floor(cyanParts[2] + (pinkParts[2] - cyanParts[2]) * factor);
           } else {
-            r = 255;
-            g = Math.floor(0 + (150 * (1 - percent)));
-            b = Math.floor(150 + (105 * percent));
+            // Interpolate from Pink (at percent = 0.5) towards Cyan (at percent = 1.0)
+            const factor = (percent - 0.5) * 2;
+            r = Math.floor(pinkParts[0] + (cyanParts[0] - pinkParts[0]) * factor);
+            g = Math.floor(pinkParts[1] + (cyanParts[1] - pinkParts[1]) * factor);
+            b = Math.floor(pinkParts[2] + (cyanParts[2] - pinkParts[2]) * factor);
           }
 
           ctx.fillStyle = `rgb(${r},${g},${b})`;

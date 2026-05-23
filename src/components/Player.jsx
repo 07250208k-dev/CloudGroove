@@ -1,11 +1,13 @@
 import React from 'react';
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, SlidersHorizontal, Volume2 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, SlidersHorizontal, Volume2, Share2 } from 'lucide-react';
+import WaveformSeekbar from './WaveformSeekbar';
 
 const Player = ({ 
   isPlaying, 
   setIsPlaying, 
   toggleEq, 
   currentTrack = null, 
+  currentBlob = null,
   trackMetadata = null,
   progress = 0, 
   duration = 0, 
@@ -17,22 +19,12 @@ const Player = ({
   isShuffle,
   onToggleShuffle,
   repeatMode,
-  onToggleRepeat
+  onToggleRepeat,
+  volume = 0.7,
+  onVolumeChange,
+  isAsmrMode = false,
+  onShareClick
 }) => {
-
-  const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
-
-  // 進捗バーのクリックによるシーク処理
-  const handleProgressClick = (e) => {
-    e.stopPropagation(); // 親のフルスクリーン起動イベントを遮断
-    if (duration === 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const clickPercent = clickX / width;
-    const newTime = clickPercent * duration;
-    onSeek(newTime);
-  };
 
   return (
     <footer 
@@ -128,16 +120,30 @@ const Player = ({
             )}
           </button>
         </div>
-        <div className="progress-container">
+        <div className="progress-container" onClick={(e) => e.stopPropagation()}>
           <span className="time">{formatTime(progress)}</span>
-          <div className="progress-bar-bg" onClick={handleProgressClick} style={{ cursor: duration > 0 ? 'pointer' : 'default' }}>
-            <div className="progress-bar-fill" style={{ width: `${progressPercent}%` }}></div>
-          </div>
+          <WaveformSeekbar
+            blob={currentBlob}
+            progress={progress}
+            duration={duration}
+            onSeek={onSeek}
+            formatTime={formatTime}
+            isAsmrMode={isAsmrMode}
+          />
           <span className="time">{formatTime(duration)}</span>
         </div>
       </div>
 
       <div className="controls-right" onClick={(e) => e.stopPropagation()}>
+        <button 
+          className="control-btn" 
+          onClick={onShareClick} 
+          disabled={!currentTrack}
+          title="共有リンク確立 [SYS.SHARE]"
+          style={{ opacity: currentTrack ? 1 : 0.5 }}
+        >
+          <Share2 size={20} className={isPlaying ? "neon-text-pink" : ""} />
+        </button>
         <button className="control-btn" onClick={toggleEq} title="Equalizer">
           <SlidersHorizontal size={20} className={isPlaying ? "neon-text-cyan" : ""} />
         </button>
@@ -147,13 +153,13 @@ const Player = ({
           className="volume-slider" 
           min="0" 
           max="100" 
-          defaultValue="70" 
+          value={volume * 100} 
           onChange={(e) => {
-            const volumeValue = e.target.value / 100;
-            const audioEl = document.querySelector('audio');
-            if (audioEl) {
-              audioEl.volume = volumeValue;
-            }
+            onVolumeChange(Number(e.target.value) / 100);
+          }}
+          style={{
+            accentColor: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)',
+            cursor: 'pointer'
           }}
         />
       </div>

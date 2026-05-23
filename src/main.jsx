@@ -119,3 +119,16 @@ createRoot(document.getElementById('root')).render(
     </ErrorBoundary>
   </StrictMode>,
 )
+
+// PWA Service Worker Registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => {
+        console.log('🤖 [PWA.SYSTEM] ServiceWorker registered with scope:', reg.scope);
+      })
+      .catch((err) => {
+        console.warn('🤖 [PWA.SYSTEM] ServiceWorker registration failed:', err);
+      });
+  });
+}

@@ -16,6 +16,50 @@
   --font-mono: 'Share Tech Mono', monospace;
 }
 
+/* === Multi-Theme Customizer Design Systems === */
+
+/* Vaporwave theme */
+[data-theme="vaporwave"] {
+  --bg-dark: #120024;
+  --bg-panel: rgba(28, 0, 48, 0.7);
+  --bg-panel-hover: rgba(56, 0, 96, 0.8);
+  --neon-pink: #ff00ff;     /* Vivid Magenta */
+  --neon-cyan: #00f3ff;     /* Cyan */
+  --neon-purple: #b500ff;   /* Violet */
+  --neon-green: #00ffcc;    /* Teal */
+  --border-color: rgba(255, 0, 255, 0.2);
+  --text-main: #f0e6f5;
+  --text-muted: #a69bb0;
+}
+
+/* Terminal Hacker theme */
+[data-theme="hacker"] {
+  --bg-dark: #020202;
+  --bg-panel: rgba(10, 20, 10, 0.8);
+  --bg-panel-hover: rgba(20, 45, 20, 0.9);
+  --neon-pink: #00aa00;     /* Darker Green */
+  --neon-cyan: #00ff00;     /* Pure Green */
+  --neon-purple: #008800;   /* Deep Green */
+  --neon-green: #00ff00;    /* Matrix Green */
+  --border-color: rgba(0, 255, 0, 0.2);
+  --text-main: #c0ffc0;
+  --text-muted: #559955;
+}
+
+/* Outrun Sunset theme */
+[data-theme="outrun"] {
+  --bg-dark: #14051a;
+  --bg-panel: rgba(30, 10, 40, 0.75);
+  --bg-panel-hover: rgba(60, 20, 80, 0.85);
+  --neon-pink: #ff5e00;     /* Sunset Orange */
+  --neon-cyan: #e0007b;     /* Outrun Rose */
+  --neon-purple: #a100ff;   /* Neon Violet */
+  --neon-green: #ffea00;    /* Solar Yellow */
+  --border-color: rgba(255, 94, 0, 0.25);
+  --text-main: #ffe6f2;
+  --text-muted: #b899ad;
+}
+
 * {
   margin: 0;
   padding: 0;
