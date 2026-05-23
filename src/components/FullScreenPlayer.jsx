@@ -115,7 +115,9 @@ const FullScreenPlayer = ({
   onHighpassFreqChange,
   playbackSpeed = 1.0,
   onPlaybackSpeedChange,
-  currentLyrics = []
+  currentLyrics = [],
+  visualizerMode = 'hacker_grid',
+  setVisualizerMode
 }) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
