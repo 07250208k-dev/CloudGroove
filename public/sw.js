@@ -1,10 +1,14 @@
 const CACHE_NAME = "cloudgroove-assets-v1";
 const AUDIO_CACHE_NAME = "cloudgroove-audio-v1";
 
+// Resolve base scope path dynamically to support subpath hosting (e.g. GitHub Pages)
+const baseScope = self.registration.scope;
+const base = new URL(baseScope).pathname;
+
 const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.json"
+  base,
+  `${base}index.html`,
+  `${base}manifest.json`
 ];
 
 // インストール時にコアファイルをキャッシュ
@@ -74,7 +78,7 @@ self.addEventListener("fetch", (e) => {
       }
       return fetch(e.request).catch(() => {
         if (e.request.mode === "navigate") {
-          return caches.match("/index.html");
+          return caches.match(`${base}index.html`);
         }
       });
     })
