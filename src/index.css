@@ -1667,3 +1667,320 @@ body.pip-body {
   from { opacity: 1; transform: translateX(0); }
   to { opacity: 0; transform: translateX(60%); }
 }
+
+/* ==========================================================================
+   📱 Mobile Responsive Design overrides (under 768px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* 1. Root Layout */
+  .app-container {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  /* 2. Horizontal Swipe Sidebar (Library Panel) */
+  .sidebar {
+    grid-row: auto !important;
+    flex-direction: row !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 55px !important;
+    max-height: 55px !important;
+    padding: 5px 12px !important;
+    gap: 12px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    white-space: nowrap !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    flex-shrink: 0 !important;
+    align-items: center !important;
+    box-shadow: 0 3px 15px rgba(0,0,0,0.5) !important;
+  }
+  .sidebar::-webkit-scrollbar {
+    display: none !important;
+  }
+  .sidebar .brand {
+    display: none !important;
+  }
+  .sidebar .library-section {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 0 !important;
+    overflow: visible !important;
+  }
+  .sidebar .library-section h2 {
+    display: none !important;
+  }
+  .sidebar .folder-tree, 
+  .sidebar .playlist-tree {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+    overflow: visible !important;
+  }
+  .sidebar .folder, 
+  .sidebar .playlist {
+    padding: 6px 10px !important;
+    font-size: 0.75rem !important;
+    border-radius: 4px !important;
+    white-space: nowrap !important;
+    gap: 5px !important;
+  }
+  
+  /* 3. Main Content Area */
+  .main-content {
+    flex-grow: 1 !important;
+    height: calc(100vh - 55px - 100px) !important;
+    overflow-y: auto !important;
+  }
+
+  /* 4. Top Bar (Header) */
+  .top-bar {
+    padding: 10px 15px !important;
+    gap: 10px !important;
+    flex-wrap: wrap !important;
+  }
+  .search-bar {
+    width: 130px !important;
+    padding: 4px 10px !important;
+    box-shadow: none !important;
+  }
+  .search-bar input {
+    font-size: 0.8rem !important;
+  }
+  .user-profile {
+    gap: 8px !important;
+  }
+  .user-profile button.asmr-toggle-btn {
+    padding: 3px 6px !important;
+    font-size: 0.65rem !important;
+    margin-right: 2px !important;
+  }
+  .user-profile img {
+    width: 30px !important;
+    height: 30px !important;
+  }
+  .toggle-icon {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  /* 5. Spectrum Visualizer (Main visual) */
+  .spectrum-container {
+    padding: 15px 15px 0 15px !important;
+  }
+  .spectrum-container > div {
+    flex-direction: column !important;
+    gap: 15px !important;
+    align-items: center !important;
+  }
+  .spectrum-container div[style*="width: 210px"] {
+    width: 120px !important;
+    height: 120px !important;
+    border-radius: 12px !important;
+  }
+  .spectrum-container div[style*="width: 210px"] div[style*="width: calc(100% - 12px)"] {
+    border-radius: 8px !important;
+  }
+  .spectrum-container div[style*="width: 210px"] + div {
+    display: none !important;
+  }
+  .spectrum-box {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .spectrum-canvas-wrap {
+    padding: 8px 12px !important;
+    gap: 12px !important;
+  }
+  .spectrum-canvas-wrap div[style*="width: 100px"] {
+    width: 55px !important;
+    height: 55px !important;
+  }
+  .spectrum-canvas-wrap div[style*="height: 100px"] {
+    height: 55px !important;
+  }
+
+  /* 6. Tracklist (Table) */
+  .tracklist-container {
+    padding: 10px 15px 25px 15px !important;
+  }
+  .tracklist th:nth-child(3),
+  .tracklist td:nth-child(3),
+  .tracklist th:nth-child(4),
+  .tracklist td:nth-child(4) {
+    display: none !important;
+  }
+  .tracklist th {
+    padding-bottom: 8px !important;
+    font-size: 0.75rem !important;
+  }
+  .tracklist td {
+    padding: 8px 2px !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* 7. Player Controls (Bottom Bar) */
+  .player-controls {
+    flex-direction: column !important;
+    height: 100px !important;
+    padding: 8px 15px !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important;
+  }
+  .progress-container {
+    width: 100% !important;
+    order: -1 !important;
+    margin-bottom: 2px !important;
+  }
+  .progress-container .time {
+    font-size: 0.65rem !important;
+  }
+  .now-playing-info {
+    width: 38% !important;
+    gap: 8px !important;
+  }
+  .now-playing-info .album-art {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 4px !important;
+  }
+  .track-info h4 {
+    max-width: 100px !important;
+    font-size: 0.75rem !important;
+  }
+  .track-info p {
+    font-size: 0.6rem !important;
+    max-width: 80px !important;
+  }
+  .controls-center {
+    max-width: 42% !important;
+  }
+  .main-buttons {
+    gap: 8px !important;
+  }
+  .main-buttons .control-btn {
+    padding: 4px !important;
+  }
+  .main-buttons .control-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  .play-pause-btn {
+    width: 28px !important;
+    height: 28px !important;
+  }
+  .play-pause-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  .controls-right {
+    width: auto !important;
+    gap: 6px !important;
+  }
+  .controls-right .control-btn {
+    padding: 4px !important;
+  }
+  .controls-right .control-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  .volume-slider {
+    display: none !important;
+  }
+  .controls-right svg[style*="color: var(--text-muted)"] {
+    display: none !important;
+  }
+
+  /* 8. Side Panels Overlay */
+  .side-panel {
+    right: 12px !important;
+    left: 12px !important;
+    width: auto !important;
+    top: 65px !important;
+    max-height: calc(100vh - 180px) !important;
+    overflow-y: auto !important;
+    padding: 15px !important;
+  }
+
+  /* 9. FullScreen Cockpit Player Stack */
+  .fs-header {
+    padding: 10px 15px !important;
+  }
+  .fs-header h1 {
+    font-size: 1.1rem !important;
+  }
+  .fs-header .brand .neon-text-pink {
+    font-size: 0.6rem !important;
+  }
+  .fs-action-buttons {
+    gap: 10px !important;
+  }
+  .fs-icon-btn {
+    padding: 4px 8px !important;
+  }
+  .fs-icon-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  .fs-visual-container {
+    flex-direction: column !important;
+    padding: 10px 15px !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 15px !important;
+  }
+  .hologram-disk {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: translate(0, 0) scale(0.68) !important;
+    margin: 15px auto 10px auto !important;
+    width: 200px !important;
+    height: 200px !important;
+    flex-shrink: 0 !important;
+  }
+  .fs-side-panel {
+    width: 100% !important;
+    max-width: 350px !important;
+    margin: 0 auto !important;
+    flex-grow: 1 !important;
+    max-height: 200px !important;
+    padding: 12px !important;
+    overflow-y: auto !important;
+    background: rgba(10, 10, 18, 0.85) !important;
+  }
+  .fs-footer {
+    padding: 8px 15px !important;
+    height: auto !important;
+    flex-shrink: 0 !important;
+  }
+  .fs-controls-container {
+    gap: 8px !important;
+  }
+  .fs-main-buttons {
+    gap: 12px !important;
+  }
+  .fs-btn {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .fs-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  .fs-play-btn {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .fs-play-btn svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+}
