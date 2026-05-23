@@ -17,16 +17,13 @@ const DriveLibrary = ({
   onUploadClick,
   onFolderDownload,
   onFolderDelete,
-  onFolderRename
+  onFolderRename,
+  onFolderMoveClick,
+  isAsmrMode = false
 }) => {
   const [showSecret, setShowSecret] = useState(false);
 
-  const handleBrandDoubleClick = () => {
-    setShowSecret(!showSecret);
-    if (!showSecret) {
-      alert('システムメッセージ: [機密] ASMRフォルダのロックが解除されました。');
-    }
-  };
+
 
   // プレイリスト作成ボタンのハンドラ
   const handleCreatePlaylist = () => {
@@ -45,8 +42,8 @@ const DriveLibrary = ({
   };
 
   return (
-    <aside className="sidebar">
-      <div className="brand" onDoubleClick={handleBrandDoubleClick}>
+    <aside className={`sidebar ${isAsmrMode ? 'asmr-sidebar' : ''}`}>
+      <div className="brand">
         <HardDrive className="neon-text-pink" size={24} />
         <h1 className="glitch" data-text="CloudGroove">CloudGroove</h1>
         <span className="badge">PRO</span>
@@ -91,31 +88,34 @@ const DriveLibrary = ({
 
           {/* 本物のGoogle Drive上のフォルダ階層を動的にループ */}
           {folders.map(folder => {
-            const isActive = selectedFolderId === folder.id;
-            const count = folderCounts[folder.id] || 0;
-            return (
-              <li 
-                key={folder.id}
-                className={`folder ${isActive ? 'active-folder' : ''}`}
-                onClick={() => onFolderSelect(folder.id)}
-                style={{ fontWeight: isActive ? 'bold' : 'normal' }}
-              >
-                <Folder size={16} className={isActive ? "neon-text-cyan" : ""} /> 
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center', 
-                  width: '100%',
-                  minWidth: 0
-                }}>
-                  <span style={{ 
-                    whiteSpace: 'nowrap', 
-                    overflow: 'hidden', 
-                    textOverflow: 'ellipsis', 
-                    marginRight: '8px' 
-                  }} title={folder.name}>
-                    {folder.name}
-                  </span>
+              const isActive = selectedFolderId === folder.id;
+              const count = folderCounts[folder.id] || 0;
+              const isSecret = folder.name === '.cg_secret_asmr';
+              const displayName = isSecret ? '🔒 [機密] ASMRアーカイブ' : folder.name;
+              
+              return (
+                <li 
+                  key={folder.id}
+                  className={`folder ${isActive ? 'active-folder' : ''} ${isSecret ? 'secret-folder' : ''}`}
+                  onClick={() => onFolderSelect(folder.id)}
+                  style={{ fontWeight: isActive ? 'bold' : 'normal' }}
+                >
+                  <Folder size={16} className={isActive ? "neon-text-cyan" : (isSecret ? "neon-text-pink" : "")} /> 
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    width: '100%',
+                    minWidth: 0
+                  }}>
+                    <span style={{ 
+                      whiteSpace: 'nowrap', 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis', 
+                      marginRight: '8px' 
+                    }} title={displayName}>
+                      {displayName}
+                    </span>
                   {count > 0 && (
                     <span className="cyber-folder-badge" style={{
                       fontSize: '0.65rem',
@@ -151,6 +151,27 @@ const DriveLibrary = ({
                         }}
                       >
                         <Edit3 size={13} className="edit-icon" />
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFolderMoveClick(folder.id, folder.name, folder.parents);
+                        }}
+                        title="このフォルダを移動"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--neon-cyan)',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s'
+                        }}
+                      >
+                        <Folder size={13} className="move-icon" />
                       </button>
 
                       <button
@@ -201,15 +222,35 @@ const DriveLibrary = ({
             );
           })}
 
-          {folders.length === 0 && (
-            <li className="folder" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none' }}>
-              (フォルダがありません)
+          {!isSyncActive && isAsmrMode && (
+            <li 
+              className="folder secret-folder"
+              onClick={() => alert("🤖 [SYS.INFO]: 精神防壁（隠しASMRアーカイブ）がアンロックされました。\n\n※このフォルダは現在【オフライン(ダミー)】表示です。右上の「同期」ボタンからGoogle Driveに接続すると、クラウド上の実体隠しフォルダ `.cg_secret_asmr` と同期され、音声ファイルのアップロードやタグ編集が有効化されます。")}
+              style={{ border: '1px dashed var(--neon-asmr-purple, #8c00ff)' }}
+            >
+              <Lock size={16} className="neon-text-pink" style={{ color: 'var(--neon-asmr-purple, #8c00ff)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span style={{ fontWeight: 'bold', color: 'var(--neon-asmr-purple, #8c00ff)', textShadow: '0 0 5px rgba(140, 0, 255, 0.3)' }}>
+                  🔒 [機密] ASMRアーカイブ (オフライン)
+                </span>
+                <span className="cyber-folder-badge" style={{
+                  fontSize: '0.65rem',
+                  fontFamily: 'monospace',
+                  color: 'var(--neon-asmr-purple, #8c00ff)',
+                  background: 'rgba(140, 0, 255, 0.05)',
+                  border: '1px solid rgba(140, 0, 255, 0.2)',
+                  padding: '1px 5px',
+                  borderRadius: '4px'
+                }}>
+                  OFFLINE
+                </span>
+              </div>
             </li>
           )}
 
-          {showSecret && (
-            <li className="folder secret-folder" style={{ color: 'var(--neon-pink)', borderLeft: '2px solid var(--neon-pink)', paddingLeft: '4px' }}>
-              <Lock size={16} /> [機密] ASMR
+          {folders.length === 0 && (!isAsmrMode || isSyncActive) && (
+            <li className="folder" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none' }}>
+              (フォルダがありません)
             </li>
           )}
         </ul>

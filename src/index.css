@@ -1475,3 +1475,141 @@ body.pip-body {
   filter: drop-shadow(0 0 6px var(--neon-pink));
 }
 
+/* ==========================================================================
+   🔮 ASMR Zen Mode (Cybernetic Slumber) スタイル
+   ========================================================================== */
+
+:root {
+  --neon-asmr-emerald: #00ffcc;
+  --neon-asmr-purple: #8c00ff;
+  --neon-asmr-blue: #00f3ff;
+}
+
+/* ASMRテーマ適用時のコンテナ & グローバル */
+.app-container.asmr-theme {
+  /* バックグラウンドをディープバイオレット & エメラルドのオーロラ風に */
+  background-image: 
+      radial-gradient(circle at 15% 50%, rgba(140, 0, 255, 0.08), transparent 30%),
+      radial-gradient(circle at 85% 30%, rgba(0, 255, 204, 0.08), transparent 30%) !important;
+}
+
+/* ASMRテーマ時のサイドバー */
+.sidebar.asmr-sidebar {
+  border-right: 1px solid rgba(0, 255, 204, 0.2) !important;
+  box-shadow: 5px 0 25px rgba(0, 255, 204, 0.05), 0 0 15px rgba(140, 0, 255, 0.05) !important;
+  background: rgba(10, 5, 20, 0.8) !important;
+}
+
+.sidebar.asmr-sidebar .brand h1 {
+  text-shadow: 0 0 10px var(--neon-asmr-emerald) !important;
+}
+
+.sidebar.asmr-sidebar .brand .badge {
+  background: var(--neon-asmr-emerald) !important;
+  box-shadow: 0 0 10px var(--neon-asmr-emerald) !important;
+  color: #000 !important;
+  font-weight: bold;
+}
+
+/* ASMRテーマ時のフォルダ/プレイリストのホバー */
+.sidebar.asmr-sidebar .folder:hover, 
+.sidebar.asmr-sidebar .playlist:hover {
+  background: rgba(0, 255, 204, 0.05) !important;
+  color: var(--neon-asmr-emerald) !important;
+  box-shadow: inset 0 0 10px rgba(0, 255, 204, 0.15) !important;
+}
+
+/* ASMRテーマ時のアクティブ項目 */
+.sidebar.asmr-sidebar .active-folder {
+  background: rgba(0, 255, 204, 0.1) !important;
+  color: var(--neon-asmr-emerald) !important;
+  box-shadow: inset 0 0 12px rgba(0, 255, 204, 0.2), 0 0 8px rgba(0, 255, 204, 0.1) !important;
+  border-left: 2px solid var(--neon-asmr-emerald) !important;
+}
+
+.sidebar.asmr-sidebar .active-playlist {
+  border-color: var(--neon-asmr-purple) !important;
+  background: rgba(140, 0, 255, 0.1) !important;
+  box-shadow: inset 0 0 12px rgba(140, 0, 255, 0.2), 0 0 8px rgba(140, 0, 255, 0.1) !important;
+}
+
+/* ASMR隠しフォルダの装飾 */
+.sidebar .secret-folder {
+  border: 1px dashed var(--neon-asmr-purple) !important;
+  color: var(--neon-asmr-purple) !important;
+  animation: asmr-pulse 2.5s infinite alternate !important;
+}
+
+@keyframes asmr-pulse {
+  0% { box-shadow: 0 0 5px rgba(140, 0, 255, 0.2); }
+  100% { box-shadow: 0 0 15px rgba(140, 0, 255, 0.5); }
+}
+
+/* ASMR用サイドパネル */
+.asmr-panel {
+  border-color: rgba(0, 255, 204, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9), 0 0 25px rgba(0, 255, 204, 0.15) !important;
+  background: rgba(8, 4, 15, 0.96) !important;
+}
+
+.timer-countdown {
+  letter-spacing: 2px;
+  animation: pulse-timer 1s infinite alternate;
+}
+
+@keyframes pulse-timer {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+/* DLsite ネオンボタン */
+.dlsite-neon-btn {
+  background: transparent;
+  border: 1px solid var(--neon-asmr-purple);
+  color: var(--neon-asmr-purple);
+  box-shadow: 0 0 10px rgba(140, 0, 255, 0.3), inset 0 0 5px rgba(140, 0, 255, 0.1);
+}
+
+.dlsite-neon-btn:hover {
+  background: var(--neon-asmr-purple);
+  color: #fff !important;
+  box-shadow: 0 0 20px rgba(140, 0, 255, 0.7), 0 0 40px rgba(140, 0, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+/* ASMRトグルボタンのマイクロアニメーション */
+.asmr-toggle-btn.active .pulse-icon {
+  animation: icon-float 2s infinite ease-in-out;
+}
+
+@keyframes icon-float {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-3px) scale(1.1); filter: drop-shadow(0 0 5px var(--neon-asmr-emerald)); }
+  100% { transform: translateY(0); }
+}
+
+/* ASMRモード時のプレイヤーコントロールの輝き */
+.app-container.asmr-theme .player-controls {
+  box-shadow: 0 -5px 25px rgba(0, 255, 204, 0.08) !important;
+  border-top-color: rgba(0, 255, 204, 0.15) !important;
+}
+
+.app-container.asmr-theme .progress-bar-fill {
+  background: linear-gradient(90deg, var(--neon-asmr-emerald) 0%, var(--neon-asmr-purple) 100%) !important;
+  box-shadow: 0 0 10px var(--neon-asmr-emerald) !important;
+}
+
+.app-container.asmr-theme .volume-slider {
+  accent-color: var(--neon-asmr-emerald) !important;
+}
+
+.app-container.asmr-theme .active-track td {
+  color: var(--neon-asmr-emerald) !important;
+  text-shadow: 0 0 8px var(--neon-asmr-emerald) !important;
+}
+
+.app-container.asmr-theme .tracklist tbody tr:hover td {
+  background: rgba(0, 255, 204, 0.03) !important;
+}
+
+

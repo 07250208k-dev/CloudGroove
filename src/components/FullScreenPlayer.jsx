@@ -21,7 +21,8 @@ const FullScreenPlayer = ({
   onToggleRepeat,
   eqGains,
   onEqChange,
-  onApplyPreset
+  onApplyPreset,
+  isAsmrMode = false
 }) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
@@ -121,7 +122,9 @@ const FullScreenPlayer = ({
             radius: Math.random() * 3 + 1,
             alpha: 1,
             decay: decay,
-            color: Math.random() > 0.5 ? '0, 243, 255' : '255, 0, 127' // シアンかネオンピンク
+            color: isAsmrMode
+              ? (Math.random() > 0.5 ? '0, 255, 204' : '140, 0, 255')
+              : (Math.random() > 0.5 ? '0, 243, 255' : '255, 0, 127') // シアンかネオンピンク
           });
         }
       }
@@ -172,12 +175,20 @@ const FullScreenPlayer = ({
         // サイバーパンクグラデーションカラーの決定
         const percent = i / bars;
         let r, g, b;
-        if (percent < 0.33) {
-          r = 0; g = 243; b = 255; // シアン
-        } else if (percent < 0.66) {
-          r = 181; g = 0; b = 255; // パープル
+        if (isAsmrMode) {
+          if (percent < 0.5) {
+            r = 0; g = 255; b = 204; // オーロラエメラルド
+          } else {
+            r = 140; g = 0; b = 255; // ルナバイオレット
+          }
         } else {
-          r = 255; g = 0; b = 127; // ピンク
+          if (percent < 0.33) {
+            r = 0; g = 243; b = 255; // シアン
+          } else if (percent < 0.66) {
+            r = 181; g = 0; b = 255; // パープル
+          } else {
+            r = 255; g = 0; b = 127; // ピンク
+          }
         }
 
         ctx.strokeStyle = `rgb(${r},${g},${b})`;
@@ -212,7 +223,7 @@ const FullScreenPlayer = ({
       ctx.stroke();
 
       // レトロ液晶スキャンライン
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.fillStyle = isAsmrMode ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.18)';
       for (let i = 0; i < canvas.height; i += 4) {
         ctx.fillRect(0, i, canvas.width, 1);
       }
@@ -226,7 +237,7 @@ const FullScreenPlayer = ({
       window.removeEventListener('resize', resizeCanvas);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [isPlaying, analyser]);
+  }, [isPlaying, analyser, isAsmrMode]);
 
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
 
@@ -241,7 +252,7 @@ const FullScreenPlayer = ({
   };
 
   return (
-    <div className="fullscreen-overlay">
+    <div className={`fullscreen-overlay ${isAsmrMode ? 'asmr-theme' : ''}`}>
       {/* サイバーなグリッド背景 */}
       <div className="cyber-grid"></div>
 
@@ -268,7 +279,6 @@ const FullScreenPlayer = ({
         {/* レトロフューチャーな液晶スペクトル */}
         <canvas ref={canvasRef} className="fs-canvas"></canvas>
 
-        {/* 中央のホログラムネオンディスク */}
         <div 
           className="hologram-disk"
           style={{
@@ -282,8 +292,8 @@ const FullScreenPlayer = ({
               : "url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=200&auto=format&fit=crop')",
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            border: '2px solid var(--neon-cyan)',
-            boxShadow: '0 0 20px rgba(0, 243, 255, 0.4)'
+            border: `2px solid ${isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)'}`,
+            boxShadow: `0 0 20px ${isAsmrMode ? 'rgba(0, 255, 204, 0.4)' : 'rgba(0, 243, 255, 0.4)'}`
           }}>
             <div className="disk-core" style={{
               background: 'rgba(0,0,0,0.85)',
@@ -293,7 +303,12 @@ const FullScreenPlayer = ({
         </div>
 
         {/* 左側：システムステータスログ（サイバー演出）＆ イコライザーHUD */}
-        <div className="fs-side-panel left-panel" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div className="fs-side-panel left-panel" style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '15px',
+          borderLeft: `3px solid ${isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)'}`
+        }}>
           <div>
             <h3>SYSTEM ANALYSIS</h3>
             <div className="system-log" style={{ fontSize: '0.75rem', height: '110px' }}>
@@ -328,7 +343,7 @@ const FullScreenPlayer = ({
                       writingMode: 'vertical-lr', 
                       direction: 'rtl', 
                       height: '80px', 
-                      accentColor: 'var(--neon-cyan)', 
+                      accentColor: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)', 
                       cursor: 'ns-resize',
                       backgroundColor: 'rgba(0,0,0,0.5)',
                       outline: 'none'
@@ -344,43 +359,43 @@ const FullScreenPlayer = ({
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '5px', marginTop: '10px' }}>
+            <div style={{ display: 'flex', gap: '5px', marginTop: '10px', flexWrap: 'wrap' }}>
               <button 
-                onClick={() => onApplyPreset([10, 5, -1, 0, 2])}
+                onClick={() => onApplyPreset(isAsmrMode ? [-8, -2, 5, 8, 4] : [10, 5, -1, 0, 2])}
                 style={{
                   flex: 1, 
                   padding: '5px 0', 
                   fontSize: '0.65rem', 
                   backgroundColor: 'rgba(0,0,0,0.6)', 
-                  border: '1px solid var(--neon-pink)', 
-                  color: 'var(--neon-pink)',
+                  border: `1px solid ${isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)'}`, 
+                  color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-pink)',
                   borderRadius: '3px',
                   cursor: 'pointer',
                   fontFamily: 'Orbitron'
                 }}
               >
-                BASS
+                {isAsmrMode ? 'WHISPER' : 'BASS'}
               </button>
               <button 
-                onClick={() => onApplyPreset([-12, -3, 8, 4, -10])}
+                onClick={() => onApplyPreset(isAsmrMode ? [-12, -4, 2, 10, 12] : [-12, -3, 8, 4, -10])}
                 style={{
                   flex: 1, 
                   padding: '5px 0', 
                   fontSize: '0.65rem', 
                   backgroundColor: 'rgba(0,0,0,0.6)', 
-                  border: '1px solid var(--neon-cyan)', 
-                  color: 'var(--neon-cyan)',
+                  border: `1px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-cyan)'}`, 
+                  color: isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-cyan)',
                   borderRadius: '3px',
                   cursor: 'pointer',
                   fontFamily: 'Orbitron'
                 }}
               >
-                RADIO
+                {isAsmrMode ? 'CLEANING' : 'RADIO'}
               </button>
               <button 
                 onClick={() => onApplyPreset([0, 0, 0, 0, 0])}
                 style={{
-                  flex: 1, 
+                  flex: '1 1 100%', 
                   padding: '5px 0', 
                   fontSize: '0.65rem', 
                   backgroundColor: 'rgba(255,255,255,0.05)', 
@@ -388,7 +403,8 @@ const FullScreenPlayer = ({
                   color: '#fff',
                   borderRadius: '3px',
                   cursor: 'pointer',
-                  fontFamily: 'Orbitron'
+                  fontFamily: 'Orbitron',
+                  marginTop: '5px'
                 }}
               >
                 FLAT
@@ -398,7 +414,12 @@ const FullScreenPlayer = ({
         </div>
 
         {/* 右側：現在の楽曲情報 */}
-        <div className="fs-side-panel right-panel" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div className="fs-side-panel right-panel" style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '15px',
+          borderRight: `3px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-pink)'}`
+        }}>
           <span className="badge">NOW PLAYING</span>
           
           {/* アルバムアートの大きなサイバーフレーム表示 */}
@@ -406,8 +427,8 @@ const FullScreenPlayer = ({
             width: '100%',
             aspectRatio: '1/1',
             borderRadius: '10px',
-            border: '2px solid var(--neon-pink)',
-            boxShadow: '0 0 25px rgba(255, 0, 127, 0.35)',
+            border: `2px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-pink)'}`,
+            boxShadow: `0 0 25px ${isAsmrMode ? 'rgba(140, 0, 255, 0.35)' : 'rgba(255, 0, 127, 0.35)'}`,
             backgroundImage: (trackMetadata && trackMetadata.coverUrl) 
               ? `url('${trackMetadata.coverUrl}')` 
               : "url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=200&auto=format&fit=crop')",
@@ -439,24 +460,35 @@ const FullScreenPlayer = ({
           <div className="track-stats" style={{ marginTop: 'auto' }}>
             <div>
               <span>SIZE:</span>
-              <span className="val">{currentTrack ? `${(currentTrack.size / (1024 * 1024)).toFixed(1)} MB` : '0.0 MB'}</span>
+              <span className="val" style={{ color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)' }}>
+                {currentTrack ? `${(currentTrack.size / (1024 * 1024)).toFixed(1)} MB` : '0.0 MB'}
+              </span>
             </div>
             <div>
               <span>TYPE:</span>
-              <span className="val">{currentTrack ? currentTrack.mimeType.split('/')[1].toUpperCase() : 'UNKNOWN'}</span>
+              <span className="val" style={{ color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--neon-cyan)' }}>
+                {currentTrack ? currentTrack.mimeType.split('/')[1].toUpperCase() : 'UNKNOWN'}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
       {/* 下部大型操作パネル */}
-      <footer className="fs-footer">
+      <footer className="fs-footer" style={{ borderTop: `1px solid ${isAsmrMode ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--neon-pink)'}` }}>
         <div className="fs-controls-container">
           {/* 進捗バー */}
           <div className="fs-progress-wrap">
             <span className="time fs-time">{formatTime(progress)}</span>
             <div className="fs-progress-bg" onClick={handleProgressClick}>
-              <div className="fs-progress-fill" style={{ width: `${progressPercent}%` }}></div>
+              <div 
+                className="fs-progress-fill" 
+                style={{ 
+                  width: `${progressPercent}%`,
+                  background: isAsmrMode ? 'linear-gradient(90deg, var(--neon-asmr-emerald) 0%, var(--neon-asmr-purple) 100%)' : 'linear-gradient(90deg, var(--neon-cyan) 0%, var(--neon-pink) 100%)',
+                  boxShadow: `0 0 15px ${isAsmrMode ? 'var(--neon-asmr-emerald)' : 'var(--neon-pink)'}`
+                }}
+              ></div>
             </div>
             <span className="time fs-time">{formatTime(duration)}</span>
           </div>

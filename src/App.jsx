@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3 } from 'lucide-react';
+import { Search, Bot, SlidersHorizontal, Settings, LogIn, LogOut, RefreshCw, X, Play, Pause, HardDrive, Plus, Download, Trash2, Edit3, Moon, Folder } from 'lucide-react';
 import DriveLibrary from './components/DriveLibrary';
 import SpectrumVisualizer from './components/SpectrumVisualizer';
 import Player from './components/Player';
@@ -8,6 +8,7 @@ import AIDJ from './components/AIDJ';
 import FullScreenPlayer from './components/FullScreenPlayer';
 import UploadModal from './components/UploadModal';
 import TagEditModal from './components/TagEditModal';
+import MoveModal from './components/MoveModal';
 
 function App() {
   const [renderError, setRenderError] = useState(null);
@@ -51,6 +52,16 @@ function App() {
   const [isDownloadingFolder, setIsDownloadingFolder] = useState(false);
   const [dlProgress, setDlProgress] = useState(0);
   const [dlLogs, setDlLogs] = useState([]);
+
+  // --- ASMR Zen Mode States ---
+  const [isAsmrMode, setIsAsmrMode] = useState(false);
+  const [showAsmrPanel, setShowAsmrPanel] = useState(false);
+  const [sleepTimer, setSleepTimer] = useState(null);
+  const [sleepTimeRemaining, setSleepTimeRemaining] = useState(0);
+  const rainAudioRef = useRef(null);
+  const [rainVolume, setRainVolume] = useState(0);
+  const [secretFolderId, setSecretFolderId] = useState(localStorage.getItem('cg_secret_folder_id') || '');
+  const [movingAsset, setMovingAsset] = useState(null);
 
   // Google Drive & Auth States
   const [clientId, setClientId] = useState(localStorage.getItem('cg_client_id') || '210521239989-t2bvp162ed8mntukhjndrg3b5tgc2fmq.apps.googleusercontent.com');
@@ -145,7 +156,9 @@ function App() {
       // アカウント切り替え時の初期デモプレイリスト
       const demoPlaylists = [
         { id: 'pl1', name: '🌙 ナイトドライブ (AI)', type: 'ai', tracks: [] },
-        { id: 'pl2', name: '💻 集中コーディング', type: 'manual', tracks: [] }
+        { id: 'pl2', name: '💻 集中コーディング', type: 'manual', tracks: [] },
+        { id: 'pl-asmr1', name: '💤 深い眠りの誘い (ASMR)', type: 'asmr', tracks: [] },
+        { id: 'pl-asmr2', name: '🎧 耳かき・ささやき特選 (ASMR)', type: 'asmr', tracks: [] }
       ];
       setPlaylists(demoPlaylists);
       localStorage.setItem(key, JSON.stringify(demoPlaylists));
@@ -163,6 +176,9 @@ function App() {
   const handleCreatePlaylist = (name, type = 'manual', promptText = '') => {
     let playlistTracks = [];
     
+    // ASMRモード中なら、強制的に type: 'asmr' にする（AI生成プレイリストも含めて）
+    const finalType = isAsmrMode ? 'asmr' : type;
+    
     if (type === 'ai' && promptText && tracks.length > 0) {
       const query = promptText.toLowerCase();
       
@@ -171,11 +187,17 @@ function App() {
         cyber: ['cyber', 'synth', 'neon', 'future', 'grid', 'retro', 'hack', 'matrix', 'system', 'electronic', 'サイバー', 'シンセ', '電子', '未来', 'テクノ'],
         chill: ['chill', 'lofi', 'night', 'midnight', 'sleep', 'relax', 'ambient', 'soft', 'slow', '🌙', '夜', '深夜', 'チル', 'リラックス', '雨', '睡眠'],
         energy: ['rock', 'metal', 'hype', 'fast', 'hard', 'dance', 'club', 'beat', 'bass', 'run', 'drive', '🔥', '激しい', 'ロック', 'ドライブ', 'クラブ', 'ビート', '爆音'],
-        vocal: ['vocal', 'sing', 'pop', 'uta', 'song', '歌', 'ボーカル', 'ポップ', 'アニソン']
+        vocal: ['vocal', 'sing', 'pop', 'uta', 'song', '歌', 'ボーカル', 'ポップ', 'アニソン'],
+        asmr: ['asmr', 'ear', 'whisper', 'sleep', 'rain', 'relax', 'ささやき', '耳かき', '睡眠', '雨', '癒し', '安眠']
       };
       
       // プロンプトに含まれるジャンル/ムードを判定
       let matchedCategories = [];
+      if (isAsmrMode) {
+        matchedCategories.push('asmr');
+        matchedCategories.push('chill');
+      }
+
       if (query.includes('サイバー') || query.includes('未来') || query.includes('電子') || query.includes('cyber') || query.includes('synth') || query.includes('インスト') || query.includes('テクノ')) {
         matchedCategories.push('cyber');
       }
@@ -187,6 +209,9 @@ function App() {
       }
       if (query.includes('歌') || query.includes('ボーカル') || query.includes('ポップ') || query.includes('pop')) {
         matchedCategories.push('vocal');
+      }
+      if (query.includes('asmr') || query.includes('耳かき') || query.includes('ささやき') || query.includes('癒')) {
+        matchedCategories.push('asmr');
       }
       
       // 2. スコアリングによる選曲
@@ -245,7 +270,7 @@ function App() {
     const newPl = {
       id: `pl-${Date.now()}`,
       name: name,
-      type: type,
+      type: finalType,
       tracks: playlistTracks
     };
     savePlaylists([...playlists, newPl]);
@@ -327,12 +352,20 @@ function App() {
     }
   }, [accessToken]);
 
-  // 選択フォルダ変更時
+  // 選択フォルダ変更時、またはフォルダ一覧・隠しフォルダIDの解決完了時
   useEffect(() => {
     if (accessToken) {
       fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
     }
-  }, [selectedFolderId]);
+  }, [selectedFolderId, secretFolderId, folders]);
+
+  // ASMR モード切り替え時に、選択フォルダをリセットしファイルを再取得
+  useEffect(() => {
+    if (accessToken) {
+      setSelectedFolderId(null);
+      fetchDriveFiles(accessToken, null, searchQuery);
+    }
+  }, [isAsmrMode]);
 
   // プロフィール取得
   const fetchUserProfile = async (token) => {
@@ -352,19 +385,42 @@ function App() {
     }
   };
 
-  // フォルダ取得
+  // フォルダ取得 ＆ 隠しASMRフォルダの自動確認・生成 (全件取得対応)
   const fetchDriveFolders = async (token) => {
     try {
       const q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
-      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=50`;
+      let allFolders = [];
+      let pageToken = '';
       
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (res.ok) {
+      do {
+        let url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=nextPageToken,files(id,name,parents)&pageSize=1000`;
+        if (pageToken) {
+          url += `&pageToken=${pageToken}`;
+        }
+        
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error('フォルダ一覧の取得に失敗しました');
+        
         const data = await res.json();
-        setFolders(data.files || []);
+        allFolders = [...allFolders, ...(data.files || [])];
+        pageToken = data.nextPageToken || '';
+      } while (pageToken);
+      
+      setFolders(allFolders);
+      const secretFolder = allFolders.find(f => f.name === '.cg_secret_asmr');
+      if (secretFolder) {
+        setSecretFolderId(secretFolder.id);
+        localStorage.setItem('cg_secret_folder_id', secretFolder.id);
+      } else {
+        console.log("Generating ASMR secret folder...");
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: '.cg_secret_asmr', mimeType: 'application/vnd.google-apps.folder' })
+        });
+        if (createRes.ok) {
+          fetchDriveFolders(token);
+        }
       }
     } catch (err) {
       console.error('フォルダ取得エラー:', err);
@@ -413,16 +469,47 @@ function App() {
       // Google Drive APIのqパラメータにおいてmimeType containsは使えないため、完全一致(=)の論理和とname containsを結合した厳密クエリを使用
       let q = "trashed = false and (mimeType = 'audio/mpeg' or mimeType = 'audio/mp3' or mimeType = 'audio/wav' or mimeType = 'audio/x-wav' or mimeType = 'audio/mp4' or mimeType = 'audio/x-m4a' or mimeType = 'audio/flac' or mimeType = 'audio/x-flac' or mimeType = 'audio/ogg' or mimeType = 'audio/aac' or mimeType = 'audio/x-aac' or name contains '.mp3' or name contains '.wav' or name contains '.m4a' or name contains '.flac' or name contains '.ogg' or name contains '.aac' or name contains '.m4r')";
       
+      // 全てのASMRフォルダIDを再帰的に取得する (階層の深さ問わず完璧にトレース)
+      const getAsmrFolderIdsTransitive = () => {
+        const ids = new Set();
+        if (!secretFolderId) return ids;
+        
+        let prevSize = -1;
+        while (ids.size !== prevSize) {
+          prevSize = ids.size;
+          folders.forEach(f => {
+            if (!ids.has(f.id)) {
+              const isDirectChild = f.parents && f.parents.includes(secretFolderId);
+              const isIndirectChild = f.parents && f.parents.some(p => ids.has(p));
+              if (isDirectChild || isIndirectChild) {
+                ids.add(f.id);
+              }
+            }
+          });
+        }
+        return ids;
+      };
+      
+      const asmrFolderIdsSet = getAsmrFolderIdsTransitive();
+      const asmrFolderIds = Array.from(asmrFolderIdsSet);
+      
       if (folderId) {
         q = `'${folderId}' in parents and (${q})`;
+      } else if (isAsmrMode) {
+        if (secretFolderId) {
+          const parentsQuery = [`'${secretFolderId}' in parents`, ...asmrFolderIds.map(id => `'${id}' in parents`)].join(' or ');
+          q = `(${parentsQuery}) and (${q})`;
+        } else {
+          q = `'dummy_nonexistent' in parents`;
+        }
       }
       
       if (query) {
         q = `(${q}) and name contains '${query}'`;
       }
       
-      // 各ファイルのparents（親フォルダ）も要求する
-      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,parents)&pageSize=100`;
+      // 各ファイルのparents（親フォルダ）も要求する。pageSizeを400に増やしてより多くの曲を取得
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,parents)&pageSize=400`;
       
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -430,17 +517,21 @@ function App() {
       
       if (res.ok) {
         const data = await res.json();
-        
-        // 【100%厳密化】クライアント側での二重の音声ファイル・拡張子フィルター
         const audioExtensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.m4r'];
         const filteredFiles = (data.files || []).filter(file => {
           if (!file || !file.name) return false;
           const nameLower = file.name.toLowerCase();
           const hasAudioExtension = audioExtensions.some(ext => nameLower.endsWith(ext));
           const isAudioMime = file.mimeType && file.mimeType.startsWith('audio/');
-          return hasAudioExtension || isAudioMime;
+          const isValidAudio = hasAudioExtension || isAudioMime;
+          if (!isValidAudio) return false;
+          const isAsmrAsset = file.parents && file.parents.some(p => p === secretFolderId || asmrFolderIdsSet.has(p));
+          if (isAsmrMode) {
+            return isAsmrAsset;
+          } else {
+            return !isAsmrAsset;
+          }
         });
-        
         setTracks(filteredFiles);
       } else if (res.status === 401) {
         handleLogout();
@@ -450,6 +541,39 @@ function App() {
       }
     } catch (err) {
       console.error('Google Drive接続エラー:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Google Driveファイル・フォルダ移動 ---
+  const moveAsset = async (assetId, currentParentId, targetParentId, isFolder = false) => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      let url = `https://www.googleapis.com/drive/v3/files/${assetId}?addParents=${targetParentId}`;
+      if (currentParentId && currentParentId !== 'root' && currentParentId !== 'root_dummy') {
+        url += `&removeParents=${currentParentId}`;
+      }
+      
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!res.ok) throw new Error('移動リクエストに失敗しました');
+      
+      alert(`${isFolder ? 'フォルダ' : 'ファイル'}を移動しました。`);
+      
+      // 移動後の再同期
+      fetchDriveFolders(accessToken);
+      fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
+      scanAudioFolders(accessToken);
+    } catch (err) {
+      alert(`移動エラー: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -663,6 +787,83 @@ function App() {
       alert(`エラー: ${err.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // --- ASMR スリープタイマー ---
+  const startSleepTimer = (minutes) => {
+    if (sleepTimer) {
+      clearInterval(sleepTimer);
+    }
+    
+    if (minutes === 0) {
+      setSleepTimer(null);
+      setSleepTimeRemaining(0);
+      alert('🤖 [SYS.TIMER]: 睡眠タイマーを解除しました。');
+      return;
+    }
+
+    const totalSeconds = minutes * 60;
+    setSleepTimeRemaining(totalSeconds);
+    
+    alert(`🤖 [SYS.TIMER]: 睡眠タイマーを ${minutes} 分にセットしました。\n終了の5分前から音量を徐々にフェードアウトします。`);
+
+    const interval = setInterval(() => {
+      setSleepTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setSleepTimer(null);
+          if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.volume = 1.0; 
+          }
+          setIsPlaying(false);
+          alert('💤 [SYS.SLUMBER]: 規定の睡眠サイクルに達しました。システムをスタンバイ状態へ移行します。');
+          return 0;
+        }
+
+        // 最後の5分 (300秒) でフェードアウトを実行
+        if (prev <= 300 && audioRef.current) {
+          const fadeVolume = prev / 300;
+          audioRef.current.volume = fadeVolume;
+        }
+
+        return prev - 1;
+      });
+    }, 1000);
+
+    setSleepTimer(interval);
+  };
+
+  // --- ASMR 雨音音量変更 ---
+  const handleRainVolumeChange = (volumeVal) => {
+    setRainVolume(volumeVal);
+    if (rainAudioRef.current) {
+      const vol = volumeVal / 100;
+      rainAudioRef.current.volume = vol;
+      
+      if (vol > 0) {
+        if (rainAudioRef.current.paused) {
+          rainAudioRef.current.play().catch(e => console.log("Ambient rain loop started", e));
+        }
+      } else {
+        rainAudioRef.current.pause();
+      }
+    }
+  };
+
+  // --- ASMR/Normal モード切り替え ---
+  const toggleAsmrMode = () => {
+    const nextState = !isAsmrMode;
+    setIsAsmrMode(nextState);
+    if (nextState) {
+      alert('🔮 [SYS.ZEN]: 安息メディテーションモードへ移行。\n心拍と同調するルナウェーブと穏やかな雨音が、あなたの意識を夢幻の彼方へ誘います。');
+    } else {
+      alert('⚡ [SYS.CYBER]: 通常のサイバーパンクコックピットへ帰還。\nシステム出力を最大化します。');
+      // 雨音を停止
+      handleRainVolumeChange(0);
+      // スリープタイマーも解除
+      startSleepTimer(0);
     }
   };
 
@@ -1180,23 +1381,48 @@ function App() {
   }
 
   return (
-    <div className="app-container">
-
+    <div className={`app-container ${isAsmrMode ? 'asmr-theme' : ''}`}>
       <DriveLibrary 
         tracks={tracks} 
-        folders={hasScanned ? folders.filter(f => audioFolderIds.has(f.id)) : folders} 
+        folders={(() => {
+          const all = hasScanned ? folders.filter(f => audioFolderIds.has(f.id)) : folders;
+          
+          // 再帰的にすべてのASMRフォルダ（階層問わず）を特定
+          const asmrFolderIdsSet = new Set();
+          if (secretFolderId) {
+            let prevSize = -1;
+            while (asmrFolderIdsSet.size !== prevSize) {
+              prevSize = asmrFolderIdsSet.size;
+              folders.forEach(f => {
+                if (!asmrFolderIdsSet.has(f.id)) {
+                  const isDirectChild = f.parents && f.parents.includes(secretFolderId);
+                  const isIndirectChild = f.parents && f.parents.some(p => asmrFolderIdsSet.has(p));
+                  if (isDirectChild || isIndirectChild) {
+                    asmrFolderIdsSet.add(f.id);
+                  }
+                }
+              });
+            }
+          }
+          
+          if (isAsmrMode) {
+            return all.filter(f => asmrFolderIdsSet.has(f.id));
+          } else {
+            return all.filter(f => f.name !== '.cg_secret_asmr' && f.id !== secretFolderId && !asmrFolderIdsSet.has(f.id));
+          }
+        })()} 
         selectedFolderId={selectedFolderId}
         onFolderSelect={(folderId) => {
           setSelectedFolderId(folderId);
-          setSelectedPlaylistId(null); // フォルダ選択時はプレイリスト選択を解除
+          setSelectedPlaylistId(null);
         }}
         currentTrack={currentTrack} 
         folderCounts={audioFolderCounts}
-        playlists={playlists}
+        playlists={playlists.filter(pl => isAsmrMode ? pl.type === 'asmr' : pl.type !== 'asmr')}
         selectedPlaylistId={selectedPlaylistId}
         onPlaylistSelect={(playlistId) => {
           setSelectedPlaylistId(playlistId);
-          setSelectedFolderId(null); // プレイリスト選択時はフォルダ選択を解除
+          setSelectedFolderId(null);
         }}
         onCreatePlaylist={handleCreatePlaylist}
         onDeletePlaylist={handleDeletePlaylist}
@@ -1205,8 +1431,9 @@ function App() {
         onFolderDownload={(folderId, folderName) => downloadFolderAsZip(folderId, folderName)}
         onFolderDelete={(folderId, folderName) => deleteFolder(folderId, folderName)}
         onFolderRename={(folderId, oldName) => renameFolder(folderId, oldName)}
+        onFolderMoveClick={(folderId, folderName, parents) => setMovingAsset({ id: folderId, name: folderName, parents: parents, isFolder: true })}
+        isAsmrMode={isAsmrMode}
       />
-
       <main className="main-content">
         <header className="top-bar">
           <form className="search-bar" onSubmit={handleSearchSubmit}>
@@ -1221,6 +1448,65 @@ function App() {
           </form>
           
           <div className="user-profile">
+            {/* ASMR Mode トグルボタン */}
+            <button 
+              className={`asmr-toggle-btn ${isAsmrMode ? 'active' : ''}`}
+              onClick={toggleAsmrMode}
+              title={isAsmrMode ? "通常モードに切り替え" : "ASMR禅モードに切り替え"}
+              style={{
+                background: 'transparent',
+                border: isAsmrMode ? '1px solid var(--neon-asmr-emerald, #00ffcc)' : '1px solid var(--border-color)',
+                color: isAsmrMode ? 'var(--neon-asmr-emerald, #00ffcc)' : 'var(--text-muted)',
+                borderRadius: '4px',
+                padding: '4px 8px',
+                fontSize: '0.75rem',
+                fontFamily: 'Orbitron, sans-serif',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                transition: 'all 0.3s ease',
+                boxShadow: isAsmrMode ? '0 0 10px rgba(0, 255, 204, 0.4)' : 'none',
+                marginRight: '10px'
+              }}
+            >
+              <Moon size={14} className={isAsmrMode ? 'pulse-icon' : ''} />
+              <span>{isAsmrMode ? 'ZEN ON' : 'ZEN OFF'}</span>
+            </button>
+
+            {isAsmrMode && (
+              <button
+                className={`asmr-panel-btn ${showAsmrPanel ? 'active' : ''}`}
+                onClick={() => {
+                  setShowAsmrPanel(!showAsmrPanel);
+                  if (!showAsmrPanel) {
+                    setShowAIDJ(false);
+                    setShowEQ(false);
+                    setShowSettings(false);
+                  }
+                }}
+                title="ASMRコントロールパネル"
+                style={{
+                  background: 'transparent',
+                  border: showAsmrPanel ? '1px solid var(--neon-asmr-purple, #8c00ff)' : '1px solid var(--border-color)',
+                  color: showAsmrPanel ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--text-muted)',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '0.75rem',
+                  fontFamily: 'Orbitron, sans-serif',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  transition: 'all 0.3s ease',
+                  boxShadow: showAsmrPanel ? '0 0 10px rgba(140, 0, 255, 0.4)' : 'none',
+                  marginRight: '15px'
+                }}
+              >
+                <span>[PANEL]</span>
+              </button>
+            )}
+
             <Bot className="toggle-icon" size={24} onClick={toggleAIDJ} title="Toggle AI DJ" />
             <Settings className="toggle-icon" size={24} onClick={toggleSettings} title="Settings" />
             
@@ -1245,7 +1531,15 @@ function App() {
           crossOrigin="anonymous"
         />
 
-        <SpectrumVisualizer isPlaying={isPlaying} analyser={analyserRef.current} />
+        {/* 環境雨音ループ用のaudio要素 */}
+        <audio 
+          ref={rainAudioRef} 
+          src="https://raw.githubusercontent.com/wacko/rainsound/master/rain.mp3" 
+          loop 
+          preload="auto"
+        />
+
+        <SpectrumVisualizer isPlaying={isPlaying} analyser={analyserRef.current} isAsmrMode={isAsmrMode} trackMetadata={trackMetadata} />
 
         <div className="tracklist-container">
           {isLoading && (
@@ -1372,6 +1666,28 @@ function App() {
                               <Edit3 size={16} />
                             </button>
                           )}
+
+                          {!selectedPlaylistId && (
+                            <button 
+                              className="track-action-btn edit-btn"
+                              title="別のフォルダへ移動"
+                              onClick={() => setMovingAsset({ id: track.id, name: track.name, parents: track.parents, isFolder: false })}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--neon-cyan)',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: 0.6,
+                                transition: 'opacity 0.2s, transform 0.2s'
+                              }}
+                            >
+                              <Folder size={16} />
+                            </button>
+                          )}
                           
                           {!selectedPlaylistId && (
                             <button 
@@ -1462,10 +1778,19 @@ function App() {
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="play-generated-btn" style={{flex: 1}} onClick={() => applyEqPreset([10, 5, -1, 0, 2])}>Cyber Bass</button>
-              <button className="play-generated-btn" style={{flex: 1}} onClick={() => applyEqPreset([-12, -3, 8, 4, -10])}>Retro Radio</button>
-              <button className="play-generated-btn" style={{flex: 1, backgroundColor: 'rgba(255,255,255,0.08)'}} onClick={() => applyEqPreset([0, 0, 0, 0, 0])}>Bypass</button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button className="play-generated-btn" style={{flex: '1 1 30%'}} onClick={() => applyEqPreset([10, 5, -1, 0, 2])}>Cyber Bass</button>
+              <button className="play-generated-btn" style={{flex: '1 1 30%'}} onClick={() => applyEqPreset([-12, -3, 8, 4, -10])}>Retro Radio</button>
+              
+              {/* ASMR プリセット */}
+              {isAsmrMode && (
+                <>
+                  <button className="play-generated-btn" style={{flex: '1 1 45%', border: '1px solid var(--neon-asmr-emerald, #00ffcc)', color: 'var(--neon-asmr-emerald, #00ffcc)'}} onClick={() => applyEqPreset([-8, -2, 5, 8, 4])}>Whisper</button>
+                  <button className="play-generated-btn" style={{flex: '1 1 45%', border: '1px solid var(--neon-asmr-purple, #8c00ff)', color: 'var(--neon-asmr-purple, #8c00ff)'}} onClick={() => applyEqPreset([-12, -4, 2, 10, 12])}>Ear Cleaning</button>
+                </>
+              )}
+              
+              <button className="play-generated-btn" style={{flex: '1 1 100%', backgroundColor: 'rgba(255,255,255,0.08)'}} onClick={() => applyEqPreset([0, 0, 0, 0, 0])}>Bypass</button>
             </div>
           </div>
         )}
@@ -1530,6 +1855,113 @@ function App() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {isAsmrMode && showAsmrPanel && (
+          <div className="side-panel asmr-panel">
+            <div className="panel-header" style={{ borderBottom: '1px solid var(--neon-asmr-emerald, #00ffcc)' }}>
+              <h3 style={{ color: 'var(--neon-asmr-emerald, #00ffcc)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Moon size={18} /> [PSYCHE SLUMBER CONSOLE]
+              </h3>
+              <button className="close-btn" onClick={() => setShowAsmrPanel(false)}><X size={20} /></button>
+            </div>
+            
+            <div className="asmr-panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '15px 0' }}>
+              {/* スリープタイマーセクション */}
+              <div className="asmr-section" style={{ background: 'rgba(10, 5, 20, 0.4)', padding: '15px', borderRadius: '6px', border: '1px solid rgba(0, 255, 204, 0.15)' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--neon-asmr-emerald, #00ffcc)', fontFamily: 'Orbitron' }}>
+                  精神沈静タイマー [SLEEP TIMER]
+                </h4>
+                
+                {sleepTimeRemaining > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', margin: '10px 0' }}>
+                    <div className="timer-countdown" style={{ fontSize: '1.6rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#fff', textShadow: '0 0 8px var(--neon-asmr-emerald)' }}>
+                      {formatTime(sleepTimeRemaining)}
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>タイマー作動中（終了5分前から自動音量フェードアウト）</span>
+                    <button 
+                      className="play-generated-btn" 
+                      style={{ marginTop: '5px', backgroundColor: 'rgba(255, 0, 85, 0.15)', border: '1px solid var(--neon-pink)', color: 'var(--neon-pink)' }}
+                      onClick={() => startSleepTimer(0)}
+                    >
+                      タイマーをキャンセル
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '10px' }}>
+                    {[15, 30, 45, 60].map(mins => (
+                      <button 
+                        key={mins}
+                        className="play-generated-btn" 
+                        onClick={() => startSleepTimer(mins)}
+                        style={{ fontSize: '0.75rem', padding: '8px 4px' }}
+                      >
+                        {mins}分
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 雨音ボリュームセクション */}
+              <div className="asmr-section" style={{ background: 'rgba(10, 5, 20, 0.4)', padding: '15px', borderRadius: '6px', border: '1px solid rgba(140, 0, 255, 0.15)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--neon-asmr-purple, #8c00ff)', fontFamily: 'Orbitron' }}>
+                    都市雨音レイヤー [CITY RAIN]
+                  </h4>
+                  <span style={{ fontSize: '0.75rem', color: rainVolume > 0 ? 'var(--neon-asmr-purple, #8c00ff)' : 'var(--text-muted)' }}>
+                    {rainVolume}%
+                  </span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={rainVolume}
+                  onChange={(e) => handleRainVolumeChange(Number(e.target.value))}
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--neon-asmr-purple, #8c00ff)',
+                    background: 'rgba(255,255,255,0.1)',
+                    cursor: 'pointer'
+                  }}
+                />
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.3' }}>
+                  優しい雨の環境音をバックグラウンドに合成します。スライダーを上げると自動でループ再生されます。
+                </p>
+              </div>
+
+              {/* DLsite ASMR Portalゲートウェイ */}
+              <div className="asmr-section" style={{ padding: '5px 0' }}>
+                <a 
+                  href="https://www.dlsite.com/home/works/type/=/work_type_category/audio"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="dlsite-neon-btn"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    textDecoration: 'none',
+                    fontWeight: 'bold',
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontSize: '0.8rem',
+                    transition: 'all 0.3s ease',
+                    textAlign: 'center',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  🎧 [DLsite.ASMR.PORTAL]
+                </a>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center', lineHeight: '1.3' }}>
+                  外部のASMRアーカイブポータルへ精神リンクを確立します。
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -1605,6 +2037,7 @@ function App() {
           eqGains={eqGains}
           onEqChange={handleEqChange}
           onApplyPreset={applyEqPreset}
+          isAsmrMode={isAsmrMode}
         />
       )}
 
@@ -1642,10 +2075,10 @@ function App() {
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
         accessToken={accessToken}
-        selectedFolderId={selectedFolderId}
+        selectedFolderId={isAsmrMode ? (selectedFolderId || secretFolderId) : selectedFolderId}
         onUploadSuccess={() => {
           fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
-          scanAudioFolders(accessToken); // フォルダごとの曲数も再スキャン
+          scanAudioFolders(accessToken);
         }}
       />
 
@@ -1658,6 +2091,27 @@ function App() {
         onEditSuccess={() => {
           fetchDriveFiles(accessToken, selectedFolderId, searchQuery);
         }}
+      />
+
+      {/* フォルダ・ファイル移動モーダル */}
+      <MoveModal 
+        isOpen={!!movingAsset}
+        onClose={() => setMovingAsset(null)}
+        asset={movingAsset}
+        folders={(() => {
+          if (isAsmrMode) {
+            return folders.filter(f => f.parents && f.parents.includes(secretFolderId));
+          } else {
+            return folders.filter(f => {
+              const isSecretRoot = f.id === secretFolderId || f.name === '.cg_secret_asmr';
+              const isSecretSub = f.parents && f.parents.includes(secretFolderId);
+              return isSecretRoot || (!isSecretSub && f.name !== '.cg_secret_asmr');
+            });
+          }
+        })()}
+        secretFolderId={secretFolderId}
+        isAsmrMode={isAsmrMode}
+        onMove={moveAsset}
       />
 
       {/* フォルダZIPダウンロード進捗モーダル */}
