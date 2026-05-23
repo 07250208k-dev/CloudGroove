@@ -111,6 +111,8 @@ const SpectrumVisualizer = ({
       const styles = window.getComputedStyle(document.documentElement);
       const cyanVar = styles.getPropertyValue('--neon-cyan').trim() || '#00f3ff';
       const pinkVar = styles.getPropertyValue('--neon-pink').trim() || '#ff007f';
+      const primaryColor = cyanVar;
+      const secondaryColor = pinkVar;
 
       const hexToRgbStr = (hex) => {
         const c = hex.replace('#', '').trim();
