@@ -2126,10 +2126,33 @@ function App() {
         
         <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
           <button 
-            onClick={() => {
+            onClick={async () => {
               localStorage.clear();
               sessionStorage.clear();
-              window.location.reload();
+              
+              if ('serviceWorker' in navigator) {
+                try {
+                  const registrations = await navigator.serviceWorker.getRegistrations();
+                  for (const reg of registrations) {
+                    await reg.unregister();
+                  }
+                } catch (e) {
+                  console.error("SW unregister failed:", e);
+                }
+              }
+
+              if ('caches' in window) {
+                try {
+                  const keys = await caches.keys();
+                  for (const key of keys) {
+                    await caches.delete(key);
+                  }
+                } catch (e) {
+                  console.error("Caches clear failed:", e);
+                }
+              }
+
+              window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
             }}
             style={{
               padding: '12px 24px',

@@ -68,10 +68,36 @@ class ErrorBoundary extends Component {
           )}
           <div style={{ display: 'flex', gap: '15px' }}>
             <button 
-              onClick={() => {
+              onClick={async () => {
                 localStorage.clear();
                 sessionStorage.clear();
-                window.location.reload();
+                
+                // Unregister all service workers to kill off persistent stale cache providers
+                if ('serviceWorker' in navigator) {
+                  try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (const reg of registrations) {
+                      await reg.unregister();
+                    }
+                  } catch (e) {
+                    console.error("SW unregister failed:", e);
+                  }
+                }
+
+                // Delete all caches (CacheStorage API) containing stale bundles
+                if ('caches' in window) {
+                  try {
+                    const keys = await caches.keys();
+                    for (const key of keys) {
+                      await caches.delete(key);
+                    }
+                  } catch (e) {
+                    console.error("Caches clear failed:", e);
+                  }
+                }
+
+                // Force cache-bypassing reload
+                window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
               }}
               style={{
                 padding: '12px 24px',
