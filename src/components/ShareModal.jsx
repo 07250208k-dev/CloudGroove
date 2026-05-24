@@ -83,7 +83,25 @@ const ShareModal = ({
     if (!currentShareUrl) return;
     setIsCopying(true);
     try {
-      await navigator.clipboard.writeText(currentShareUrl);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(currentShareUrl);
+      } else {
+        // Fallback for HTTP / non-secure contexts (e.g. mobile access over local IP)
+        const textArea = document.createElement("textarea");
+        textArea.value = currentShareUrl;
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (!successful) {
+          throw new Error('execCommand copy returned false');
+        }
+      }
       if (addToast) {
         addToast('🤖 LINK COPIED TO SYNAPSE. [OK]', 'sys');
       }
