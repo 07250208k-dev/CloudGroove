@@ -2120,6 +2120,19 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying, currentTrack, trackDuration, showFullScreenPlayer, showAIDJ, showEQ, showSettings, showAsmrPanel]);
 
+  const playPauseToggleRef = useRef(handlePlayPauseToggle);
+  const playPrevTrackRef = useRef(playPrevTrack);
+  const playNextTrackRef = useRef(playNextTrack);
+  const handleSeekRef = useRef(handleSeek);
+
+  // Keep refs up-to-date on every render to resolve stale closures
+  useEffect(() => {
+    playPauseToggleRef.current = handlePlayPauseToggle;
+    playPrevTrackRef.current = playPrevTrack;
+    playNextTrackRef.current = playNextTrack;
+    handleSeekRef.current = handleSeek;
+  });
+
   // --- Media Session API (Background playback UI) ---
   useEffect(() => {
     if ('mediaSession' in navigator && currentTrack) {
@@ -2160,30 +2173,30 @@ function App() {
     if ('mediaSession' in navigator) {
       try {
         navigator.mediaSession.setActionHandler('play', () => {
-          handlePlayPauseToggle();
+          playPauseToggleRef.current();
         });
         navigator.mediaSession.setActionHandler('pause', () => {
-          handlePlayPauseToggle();
+          playPauseToggleRef.current();
         });
         navigator.mediaSession.setActionHandler('previoustrack', () => {
-          playPrevTrack();
+          playPrevTrackRef.current();
         });
         navigator.mediaSession.setActionHandler('nexttrack', () => {
-          playNextTrack();
+          playNextTrackRef.current();
         });
         navigator.mediaSession.setActionHandler('seekto', (details) => {
           if (details.fastSeek && 'fastSeek' in (activeAudioRef.current || audioRef.current)) {
             const activeAudio = activeAudioRef.current || audioRef.current;
             activeAudio.fastSeek(details.seekTime);
           } else {
-            handleSeek(details.seekTime);
+            handleSeekRef.current(details.seekTime);
           }
         });
       } catch (e) {
         console.warn("MediaSession handlers initialization failed", e);
       }
     }
-  }, [displayTracks]);
+  }, []);
 
   const getByteSizeText = (bytes) => {
     if (!bytes) return '不明';
