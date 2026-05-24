@@ -1845,6 +1845,12 @@ function App() {
           }
         }
       } else {
+        // Sync trackProgress when returning to foreground to snap progress bar back in place
+        const activeAudio = activeAudioRef.current || audioRef.current;
+        if (activeAudio) {
+          setTrackProgress(activeAudio.currentTime);
+        }
+
         if (pipWindow) {
           try {
             pipWindow.close();
@@ -1872,7 +1878,10 @@ function App() {
   const handleTimeUpdate = (e) => {
     const activeAudio = activeAudioRef.current || audioRef.current;
     if (e.target === activeAudio) {
-      setTrackProgress(e.target.currentTime);
+      // Save mobile CPU in background: only update progress state when visible
+      if (document.visibilityState === 'visible') {
+        setTrackProgress(e.target.currentTime);
+      }
       
       // Update Media Session position state
       if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
