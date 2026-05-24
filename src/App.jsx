@@ -54,6 +54,14 @@ function App() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [hasBootstrapped, setHasBootstrapped] = useState(false);
   const [visualizerMode, setVisualizerMode] = useState(localStorage.getItem('cg_vis_mode') || 'hacker_grid');
+  const [bypassWebAudio, setBypassWebAudio] = useState(() => {
+    const saved = localStorage.getItem('cg_bypass_web_audio');
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return isMobile;
+  });
 
   // --- Upload & Download States ---
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -1211,6 +1219,13 @@ function App() {
     setShowSettings(false);
   };
 
+  const handleBypassWebAudioChange = (val) => {
+    setBypassWebAudio(val);
+    localStorage.setItem('cg_bypass_web_audio', val);
+    addToast(val ? '🤖 DIRECT ENGINE: ON [SYS.DIRECT.ACTIVE]' : '⚡ CYBER AUDIO ENGINE: ON [SYS.AUDIO.ACTIVE]', 'sys');
+    addToast('エンジン変更を適用するため、次の曲の再生時に反映されます。', 'info');
+  };
+
   const createImpulseResponse = (context, duration, decay) => {
     const sampleRate = context.sampleRate;
     const length = sampleRate * duration;
@@ -1229,6 +1244,10 @@ function App() {
   };
 
   const initWebAudio = () => {
+    if (bypassWebAudio) {
+      audioContextRef.current = null;
+      return;
+    }
     if (!audioContextRef.current && audioRef.current && audioRef2.current) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const ctx = new AudioContextClass();
@@ -1611,6 +1630,7 @@ function App() {
       
       activeAudio.src = objectUrl;
       activeAudio.playbackRate = playbackSpeed;
+      activeAudio.volume = bypassWebAudio ? volume : 1.0;
       activeAudio.load();
       
       const playPromise = activeAudio.play();
@@ -1637,6 +1657,9 @@ function App() {
   };
 
   const playTrackWithCrossfade = async (track) => {
+    if (bypassWebAudio) {
+      return playTrack(track, true);
+    }
     setIsLoading(true);
     initWebAudio();
     
@@ -1840,6 +1863,19 @@ function App() {
     const activeAudio = activeAudioRef.current || audioRef.current;
     if (e.target === activeAudio) {
       setTrackProgress(e.target.currentTime);
+      
+      // Update Media Session position state
+      if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: e.target.duration || 0,
+            playbackRate: e.target.playbackRate || 1.0,
+            position: e.target.currentTime || 0
+          });
+        } catch (err) {
+          console.warn("Failed to set MediaSession position state", err);
+        }
+      }
       
       // 再生履歴ログの記録（30秒以上、または半分の再生で記録）
       if (!playLoggedRef.current && currentTrack && e.target.duration > 0) {
@@ -2064,6 +2100,61 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying, currentTrack, trackDuration, showFullScreenPlayer, showAIDJ, showEQ, showSettings, showAsmrPanel]);
+
+  // --- Media Session API (Background playback UI) ---
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentTrack) {
+      const cleanTitle = currentTrack.name.replace(/\.[^/.]+$/, "");
+      const title = trackMetadata?.title || cleanTitle;
+      const artist = trackMetadata?.artist || 'Google Drive 音源';
+      const album = trackMetadata?.album || 'マイドライブ';
+      const coverUrl = trackMetadata?.coverUrl || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=500&auto=format&fit=crop';
+
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: title,
+        artist: artist,
+        album: album,
+        artwork: [
+          { src: coverUrl, sizes: '512x512', type: 'image/png' }
+        ]
+      });
+    }
+  }, [currentTrack, trackMetadata]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentTrack) {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+  }, [isPlaying, currentTrack]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          handlePlayPauseToggle();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          handlePlayPauseToggle();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          playPrevTrack();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          playNextTrack();
+        });
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+          if (details.fastSeek && 'fastSeek' in (activeAudioRef.current || audioRef.current)) {
+            const activeAudio = activeAudioRef.current || audioRef.current;
+            activeAudio.fastSeek(details.seekTime);
+          } else {
+            handleSeek(details.seekTime);
+          }
+        });
+      } catch (e) {
+        console.warn("MediaSession handlers initialization failed", e);
+      }
+    }
+  }, [displayTracks]);
 
   const getByteSizeText = (bytes) => {
     if (!bytes) return '不明';
@@ -2611,6 +2702,24 @@ function App() {
               <h3><SlidersHorizontal size={18} /> 5-Band Graphic EQ</h3>
               <button className="close-btn" onClick={() => setShowEQ(false)}><X size={20} /></button>
             </div>
+            {bypassWebAudio && (
+              <div style={{
+                margin: '10px',
+                padding: '10px',
+                border: '1px solid var(--neon-pink)',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(255, 0, 127, 0.1)',
+                color: 'var(--neon-pink)',
+                fontSize: '0.75rem',
+                lineHeight: '1.4',
+                fontFamily: 'var(--font-mono)',
+                textAlign: 'center',
+                boxShadow: '0 0 10px rgba(255, 0, 127, 0.2)'
+              }}>
+                [SYS.WARNING.ACTIVE]<br/>
+                最適化モード有効のため、イコライザーの効果は適用されません。設定から変更できます。
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', height: '160px', marginBottom: '20px', padding: '10px' }}>
               {[60, 230, 910, 3600, 14000].map((freq, index) => (
                 <div key={freq} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
@@ -2738,6 +2847,26 @@ function App() {
                 />
                 <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.4' }}>
                   曲の自動切り替わり時にフェードイン/フェードアウトする秒数を指定します（0秒で無効化）。
+                </p>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', color: 'var(--neon-pink)', fontSize: '0.9rem', fontFamily: 'Orbitron', cursor: 'pointer' }}>
+                  <span>バックグラウンド最適化 [SYS.DIRECT.ENGINE]</span>
+                  <input 
+                    type="checkbox" 
+                    checked={bypassWebAudio} 
+                    onChange={(e) => handleBypassWebAudioChange(e.target.checked)}
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      accentColor: 'var(--neon-cyan)',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </label>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  有効にすると、Web Audio APIをバイパスして直接再生します。スマホやタブレットでバックグラウンド再生する際の音のプチプチ（ノイズ）を防ぎます。※ONの場合イコライザーなどの効果は無効になります。
                 </p>
               </div>
 
@@ -2945,6 +3074,9 @@ function App() {
           setVolume(val);
           if (masterGainNodeRef.current && audioContextRef.current) {
             masterGainNodeRef.current.gain.setValueAtTime(val, audioContextRef.current.currentTime);
+          } else {
+            if (audioRef.current) audioRef.current.volume = val;
+            if (audioRef2.current) audioRef2.current.volume = val;
           }
         }}
         isAsmrMode={isAsmrMode}
@@ -2976,6 +3108,7 @@ function App() {
       {showFullScreenPlayer && (
         <FullScreenPlayer 
           isPlaying={isPlaying}
+          bypassWebAudio={bypassWebAudio}
           setIsPlaying={handlePlayPauseToggle}
           currentTrack={currentTrack}
           onShareClick={() => setShowShareModal(true)}
@@ -3009,6 +3142,9 @@ function App() {
             setVolume(val);
             if (masterGainNodeRef.current && audioContextRef.current) {
               masterGainNodeRef.current.gain.setValueAtTime(val, audioContextRef.current.currentTime);
+            } else {
+              if (audioRef.current) audioRef.current.volume = val;
+              if (audioRef2.current) audioRef2.current.volume = val;
             }
           }}
           isReverbOn={isReverbOn}

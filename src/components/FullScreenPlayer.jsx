@@ -73,6 +73,7 @@ const initFullScreenGrid = (width, height, baseRadius) => {
 
 const FullScreenPlayer = ({
   isPlaying,
+  bypassWebAudio = false,
   setIsPlaying,
   currentTrack,
   currentBlob = null,
@@ -948,11 +949,16 @@ const FullScreenPlayer = ({
                   <p>&gt; BITRATE: 320KBPS / STEADY</p>
                   <p className="neon-text-pink">&gt; BEAT DETECTOR STATUS: OK</p>
                   <p style={{
-                    color: eqGains.some(g => g !== 0) ? 'var(--neon-cyan)' : 'var(--text-muted)',
-                    animation: eqGains.some(g => g !== 0) ? 'pulse-fast 1s infinite alternate' : 'none'
+                    color: bypassWebAudio ? 'var(--neon-pink)' : (eqGains.some(g => g !== 0) ? 'var(--neon-cyan)' : 'var(--text-muted)'),
+                    animation: (eqGains.some(g => g !== 0) && !bypassWebAudio) ? 'pulse-fast 1s infinite alternate' : 'none'
                   }}>
-                    &gt; EQ STATUS: {eqGains.some(g => g !== 0) ? 'ACTIVE' : 'BYPASS (FLAT)'}
+                    &gt; EQ STATUS: {bypassWebAudio ? 'BYPASSED [DIRECT ENGINE]' : (eqGains.some(g => g !== 0) ? 'ACTIVE' : 'BYPASS (FLAT)')}
                   </p>
+                  {bypassWebAudio && (
+                    <p style={{ color: 'var(--neon-pink)', animation: 'pulse-fast 1s infinite alternate' }}>
+                      &gt; BACKGROUND OPTIMIZATION ACTIVE: EFFECTS INACTIVE
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1051,6 +1057,24 @@ const FullScreenPlayer = ({
               <h3 style={{ fontSize: '0.8rem', color: isAsmrMode ? 'var(--neon-asmr-purple)' : 'var(--neon-pink)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
                 <Activity size={13} /> SOUND FX CONSOLE
               </h3>
+
+              {bypassWebAudio && (
+                <div style={{
+                  padding: '8px',
+                  border: '1px solid var(--neon-pink)',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(255, 0, 127, 0.1)',
+                  color: 'var(--neon-pink)',
+                  fontSize: '0.65rem',
+                  lineHeight: '1.4',
+                  fontFamily: 'var(--font-mono)',
+                  textAlign: 'center',
+                  marginBottom: '5px'
+                }}>
+                  [OPTIMIZATION ENABLED]<br/>
+                  音のプツプツを防ぐため、Direct Playbackエンジンが作動中です。エフェクトは無効化されています。
+                </div>
+              )}
 
               {/* REVERB Residual Sound */}
               <div style={{ background: 'rgba(5, 5, 8, 0.6)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
