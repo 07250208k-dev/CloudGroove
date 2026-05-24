@@ -70,6 +70,23 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
+  // ナビゲーションおよびコアファイルに対するネットワークファースト戦略 (GitHub Pages等のアップデート時の黒画面バグ防止)
+  if (e.request.mode === "navigate" || url.pathname.endsWith("/index.html") || url.pathname === base) {
+    e.respondWith(
+      fetch(e.request).then((networkResponse) => {
+        return caches.open(CACHE_NAME).then((cache) => {
+          cache.put(e.request, networkResponse.clone());
+          return networkResponse;
+        });
+      }).catch(() => {
+        return caches.match(e.request).then((cachedResponse) => {
+          return cachedResponse || caches.match(`${base}index.html`);
+        });
+      })
+    );
+    return;
+  }
+
   // それ以外の一般的なアセット（静的ファイル）
   e.respondWith(
     caches.match(e.request).then((cachedResponse) => {

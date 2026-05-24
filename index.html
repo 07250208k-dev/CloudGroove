@@ -19,6 +19,30 @@
     <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.js"></script>
     <!-- JSZip for client-side folder zipping on download -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+      // Automatic recovery from stale Service Worker caches (blackout / blank screen protection)
+      window.addEventListener('error', function(e) {
+        var target = e.target || e.srcElement;
+        if (target && target.tagName === 'SCRIPT' && target.src && target.src.indexOf('index-') > -1) {
+          console.warn("Detected stale bundle load error! Purging cache and auto-reloading...");
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              for (var i = 0; i < regs.length; i++) {
+                regs[i].unregister();
+              }
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              keys.forEach(function(key) { caches.delete(key); });
+            });
+          }
+          setTimeout(function() {
+            window.location.reload(true);
+          }, 300);
+        }
+      }, true);
+    </script>
   </head>
   <body>
     <div id="root"></div>
