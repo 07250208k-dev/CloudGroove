@@ -1698,6 +1698,7 @@ body.pip-body {
     gap: 12px !important;
     overflow-x: auto !important;
     overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important; /* iOS/Safari慣性スクロール */
     white-space: nowrap !important;
     border-right: none !important;
     border-bottom: 1px solid rgba(0, 243, 255, 0.25) !important;
@@ -1757,6 +1758,7 @@ body.pip-body {
     flex-grow: 1 !important;
     height: calc(100vh - 52px - 72px) !important; /* sidebar(52px) + player-bar(72px) */
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important; /* iOS/Safari慣性スクロール */
     background: rgba(3, 2, 6, 0.4) !important;
   }
 
@@ -2015,6 +2017,7 @@ body.pip-body {
     top: 60px !important;
     max-height: calc(100vh - 160px) !important;
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important; /* iOS/Safari慣性スクロール */
     padding: 14px !important;
     background: rgba(6, 3, 12, 0.98) !important;
     backdrop-filter: blur(25px) !important;
@@ -2143,6 +2146,7 @@ body.pip-body {
     max-height: 200px !important;
     padding: 10px !important;
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important; /* iOS/Safari慣性スクロール */
     background: rgba(6, 3, 12, 0.88) !important;
     border: 1px solid rgba(0, 243, 255, 0.2) !important;
     border-radius: 12px !important;

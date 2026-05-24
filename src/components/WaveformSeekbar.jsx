@@ -257,6 +257,34 @@ const WaveformSeekbar = ({
     onSeek(percent * duration);
   };
 
+  // タッチイベント処理 (スマホ・タブレット対応)
+  const handleTouchStart = (e) => {
+    e.stopPropagation();
+    handleTouchSeek(e);
+  };
+
+  const handleTouchMove = (e) => {
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault(); // シークドラッグ時の不要なブラウザスクロールを防止
+    handleTouchSeek(e);
+  };
+
+  const handleTouchSeek = (e) => {
+    if (!canvasRef.current || duration === 0) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches[0] || e.changedTouches[0];
+    const x = touch.clientX - rect.left;
+    const percent = Math.min(1, Math.max(0, x / rect.width));
+    onSeek(percent * duration);
+    setHoverPercent(percent);
+    setHoverX(x);
+  };
+
+  const handleTouchEnd = (e) => {
+    e.stopPropagation();
+    setHoverPercent(null);
+  };
+
   return (
     <div 
       className="waveform-seekbar-container" 
@@ -312,6 +340,9 @@ const WaveformSeekbar = ({
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
           height: '100%',
