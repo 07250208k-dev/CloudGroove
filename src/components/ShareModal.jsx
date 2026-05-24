@@ -46,9 +46,12 @@ const ShareModal = ({
   const themeInfo = themeConfig[currentTheme] || themeConfig.neon;
   const accentColor = themeInfo.accent;
 
+  // Get base URL (handles GitHub Pages subpaths correctly)
+  const baseShareUrl = window.location.href.split('?')[0].replace(/\/$/, "");
+
   // 1. トラック共有情報の構築
   const trackName = currentTrack ? currentTrack.name.replace(/\.[^/.]+$/, "") : '';
-  const trackShareUrl = currentTrack ? `${window.location.origin}?trackId=${currentTrack.id}` : '';
+  const trackShareUrl = currentTrack ? `${baseShareUrl}?trackId=${currentTrack.id}` : '';
   const trackQrUrl = currentTrack 
     ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&color=${themeInfo.color}&bgcolor=${themeInfo.bgcolor}&data=${encodeURIComponent(trackShareUrl)}`
     : '';
@@ -71,7 +74,7 @@ const ShareModal = ({
       playlistTrackCount = p ? p.tracks.length : 0;
     }
   }
-  const playlistShareUrl = selectedPlaylistId ? `${window.location.origin}?playlistId=${selectedPlaylistId}` : '';
+  const playlistShareUrl = selectedPlaylistId ? `${baseShareUrl}?playlistId=${selectedPlaylistId}` : '';
   const playlistQrUrl = selectedPlaylistId 
     ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&color=${themeInfo.color}&bgcolor=${themeInfo.bgcolor}&data=${encodeURIComponent(playlistShareUrl)}`
     : '';

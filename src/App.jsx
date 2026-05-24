@@ -1554,38 +1554,48 @@ function App() {
       const activeGain = activeAudio === audioRef.current ? gainNode1.current : gainNode2.current;
       const inactiveGain = activeAudio === audioRef.current ? gainNode2.current : gainNode1.current;
       
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      let objectUrl = '';
+      let blob = null;
+      if (track.isDemo) {
+        objectUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+        setCurrentBlob(null);
+      } else {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        if (!res.ok) throw new Error('オーディオデータのダウンロードに失敗しました');
+        
+        blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setCurrentBlob(blob);
+      }
       
-      if (!res.ok) throw new Error('オーディオデータのダウンロードに失敗しました');
-      
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
-      setCurrentBlob(blob);
-      
-      if (audioUrl) {
+      if (audioUrl && !track.isDemo) {
         URL.revokeObjectURL(audioUrl);
       }
       setAudioUrl(objectUrl);
       setCurrentTrack(track);
       playLoggedRef.current = false;
-      fetchLyrics(track, accessToken);
+      if (!track.isDemo) {
+        fetchLyrics(track, accessToken);
+      } else {
+        setCurrentLyrics([]);
+      }
       
       // 初期メタデータ設定（フォールバック用）
       const cleanTitle = track.name.replace(/\.[^/.]+$/, "");
       setTrackMetadata({
-        title: cleanTitle,
-        artist: 'Google Drive 音源',
-        album: 'マイドライブ',
-        coverUrl: ''
+        title: track.isDemo ? 'Cyberpunk Slumber [DEMO]' : cleanTitle,
+        artist: track.isDemo ? 'CloudGroove Synthwave' : 'Google Drive 音源',
+        album: track.isDemo ? 'Virtual Reality Simulation' : 'マイドライブ',
+        coverUrl: track.isDemo ? 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=500&auto=format&fit=crop' : ''
       });
 
       // ID3タグ解析 (非同期)
       try {
         const jsmediatags = window.jsmediatags;
-        if (jsmediatags) {
+        if (jsmediatags && blob) {
           jsmediatags.read(blob, {
             onSuccess: (tag) => {
               const tags = tag.tags;
@@ -1657,7 +1667,7 @@ function App() {
   };
 
   const playTrackWithCrossfade = async (track) => {
-    if (bypassWebAudio) {
+    if (bypassWebAudio || track.isDemo) {
       return playTrack(track, true);
     }
     setIsLoading(true);
@@ -2104,20 +2114,30 @@ function App() {
   // --- Media Session API (Background playback UI) ---
   useEffect(() => {
     if ('mediaSession' in navigator && currentTrack) {
-      const cleanTitle = currentTrack.name.replace(/\.[^/.]+$/, "");
-      const title = trackMetadata?.title || cleanTitle;
-      const artist = trackMetadata?.artist || 'Google Drive 音源';
-      const album = trackMetadata?.album || 'マイドライブ';
-      const coverUrl = trackMetadata?.coverUrl || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=500&auto=format&fit=crop';
+      try {
+        const cleanTitle = currentTrack.name.replace(/\.[^/.]+$/, "");
+        const title = trackMetadata?.title || cleanTitle;
+        const artist = trackMetadata?.artist || 'Google Drive 音源';
+        const album = trackMetadata?.album || 'マイドライブ';
+        
+        let coverUrl = 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=500&auto=format&fit=crop';
+        if (trackMetadata?.coverUrl && !trackMetadata.coverUrl.includes('undefined')) {
+          coverUrl = trackMetadata.coverUrl;
+        }
 
-      navigator.mediaSession.metadata = new window.MediaMetadata({
-        title: title,
-        artist: artist,
-        album: album,
-        artwork: [
-          { src: coverUrl, sizes: '512x512', type: 'image/png' }
-        ]
-      });
+        if (window.MediaMetadata) {
+          navigator.mediaSession.metadata = new window.MediaMetadata({
+            title: title,
+            artist: artist,
+            album: album,
+            artwork: [
+              { src: coverUrl, sizes: '512x512', type: 'image/png' }
+            ]
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to set MediaSession metadata:", err);
+      }
     }
   }, [currentTrack, trackMetadata]);
 
@@ -2477,9 +2497,24 @@ function App() {
               <HardDrive size={48} className="neon-text-cyan" />
               <h3>Google Drive 音楽同期</h3>
               <p>Google Driveに保存されている音声ファイル（MP3など）のみを安全に同期・再生します。右上の「同期」から接続してください。</p>
-              <button className="play-generated-btn" onClick={handleLogin} style={{ marginTop: '15px' }}>
-                <LogIn size={16} style={{ marginRight: '8px' }} /> Googleアカウントと同期する
-              </button>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '20px', flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: '500px' }}>
+                <button className="play-generated-btn" onClick={handleLogin} style={{ flex: '1 1 200px' }}>
+                  <LogIn size={16} style={{ marginRight: '8px' }} /> Googleアカウントと同期する
+                </button>
+                <button 
+                  className="play-generated-btn" 
+                  onClick={() => playTrack({ id: 'demo-track-id', name: 'Cyberpunk Slumber.mp3', isDemo: true }, true)}
+                  style={{
+                    flex: '1 1 200px',
+                    backgroundColor: 'rgba(0, 243, 255, 0.1)',
+                    border: '1px solid var(--neon-cyan)',
+                    color: 'var(--neon-cyan)',
+                    boxShadow: '0 0 10px rgba(0, 243, 255, 0.2)'
+                  }}
+                >
+                  <Play size={16} style={{ marginRight: '8px' }} /> デモ音源を再生する [SYS.DEMO]
+                </button>
+              </div>
             </div>
           ) : displayTracks.length === 0 ? (
             <div className="sync-prompt">
