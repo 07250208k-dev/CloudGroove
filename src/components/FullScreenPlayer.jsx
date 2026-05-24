@@ -749,6 +749,20 @@ const FullScreenPlayer = ({
           </div>
         </div>
 
+        {/* 縦画面専用のすっきりした曲情報 ＆ SFステータスライン */}
+        <div className="fs-mobile-track-info">
+          <h2 className="glitch neon-text-cyan" data-text={trackMetadata ? trackMetadata.title : (currentTrack ? currentTrack.name : '')}>
+            {trackMetadata ? trackMetadata.title : (currentTrack ? currentTrack.name : 'NO CONNECTION')}
+          </h2>
+          <p className="artist-name-mobile">
+            {trackMetadata ? trackMetadata.artist : 'UNKNOWN ARTIST'}
+          </p>
+          <div className="fs-mobile-status-bar">
+            <span className="spec-badge">[SIZE:: {currentTrack ? `${(currentTrack.size / (1024 * 1024)).toFixed(1)} MB` : '0.0 MB'}]</span>
+            <span className="spec-badge">[TYPE:: {currentTrack ? currentTrack.mimeType.split('/')[1].toUpperCase() : 'UNKNOWN'}]</span>
+          </div>
+        </div>
+
         {/* ホログラム・カラオケ字幕オーバーレイ */}
         {currentLyrics && currentLyrics.length > 0 && activeLyricIndex !== -1 && (
           <div style={{
