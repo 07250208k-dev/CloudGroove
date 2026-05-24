@@ -1686,8 +1686,11 @@ body.pip-body {
     background-size: cover !important;
   }
 
-  /* 2. Horizontal Swipe Sidebar (Library Panel) */
+  /* 2. Horizontal Swipe Sidebar (Library Panel) - タッチ完全安定化 */
   .sidebar {
+    position: relative !important;
+    z-index: 100 !important; /* レイヤーを明示してタッチ遮断を防止 */
+    touch-action: pan-x !important; /* 横スワイプ操作をブラウザに明示 */
     grid-row: auto !important;
     flex-direction: row !important;
     width: 100% !important;
@@ -1744,6 +1747,7 @@ body.pip-body {
     color: var(--text-muted) !important;
     font-family: var(--font-mono) !important;
     transition: all 0.2s ease !important;
+    flex-shrink: 0 !important; /* 横幅が潰れるのを絶対に防ぎ、スクロール幅を確保 */
   }
   .sidebar .active-folder,
   .sidebar .active-playlist {
@@ -1753,8 +1757,11 @@ body.pip-body {
     box-shadow: 0 0 10px rgba(0, 243, 255, 0.25) !important;
   }
   
-  /* 3. Main Content Area */
+  /* 3. Main Content Area - タッチ安定化 */
   .main-content {
+    position: relative !important;
+    z-index: 50 !important; /* レイヤー階層を明示 */
+    touch-action: pan-y !important; /* 縦スクロールを優先 */
     flex-grow: 1 !important;
     height: calc(100vh - 52px - 72px) !important; /* sidebar(52px) + player-bar(72px) */
     overflow-y: auto !important;
@@ -1762,8 +1769,10 @@ body.pip-body {
     background: rgba(3, 2, 6, 0.4) !important;
   }
 
-  /* 4. Top Bar (Header) */
+  /* 4. Top Bar (Header) - タッチ安定化 */
   .top-bar {
+    position: relative !important;
+    z-index: 150 !important; /* レイヤーを上に置いてヘッダー内操作を確実に */
     padding: 10px 14px !important;
     gap: 10px !important;
     flex-wrap: nowrap !important;
@@ -1875,6 +1884,7 @@ body.pip-body {
   /* 7. Player Controls (Bottom Bar) - Spotify風1行プレミアムレイアウト */
   .player-controls {
     position: relative !important;
+    z-index: 200 !important; /* 最前面に配置して操作を最優先 */
     flex-direction: row !important;
     height: 72px !important;
     padding: 0 16px !important;
