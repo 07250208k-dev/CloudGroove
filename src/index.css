@@ -1671,7 +1671,7 @@ body.pip-body {
 /* ==========================================================================
    📱 Mobile Responsive Design overrides (under 768px)
    ========================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 1024px) and (orientation: portrait), (max-width: 768px) {
   /* 1. Root Layout */
   .app-container {
     display: flex !important;
